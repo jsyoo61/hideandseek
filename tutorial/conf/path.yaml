@@ -1,0 +1,4 @@
+
+PATH:
+  PROJECT:
+  DATA: ${PATH.PROJECT}/data
