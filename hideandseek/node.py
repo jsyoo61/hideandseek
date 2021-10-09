@@ -2,6 +2,7 @@
 
 
 '''
+import logging
 import os
 import shutil
 
@@ -13,12 +14,19 @@ import tools as T
 import tools.torch
 import tools.modules
 
-import validation as V
+from . import validation as V
+
+__all__ = [
+'Node'
+]
+
+# %%
+log = logging.getLogger(__name__)
 
 # %%
 class Node:
     '''Local Node for training'''
-    def __init__(self, model, dataset, cv, cfg_train, criterion, MODEL_DIR, NODE_DIR, name):
+    def __init__(self, model, dataset, cv, cfg_train, criterion, MODEL_DIR, NODE_DIR, name='default'):
         '''
         :param model: torch.nn.Module object
         :param cv: dict of CrossValidation objects
@@ -41,7 +49,7 @@ class Node:
             os.makedirs(self.MODEL_DIR, exist_ok=True)
         if self.NODE_DIR is not None:
             os.makedirs(self.NODE_DIR, exist_ok=True)
-        # self.misc = self.set_misc()
+
         self.set_misc()
 
         self.iter = 0
@@ -60,9 +68,8 @@ class Node:
         if self.dataset is not None:
             if hasattr(self.dataset, 'get_f'):
                 log.info('get_f found in loader.dataset')
-                # misc.get_f = self.dataset.get_f
+
                 self.misc.get_f = self.dataset.get_f
-        # return misc
 
     def set_cv(self, cv):
         self.cv = cv
@@ -153,7 +160,9 @@ class Node:
         for epoch in range(1, local_T+1):
             self.train_meter.reset()
             self.epoch_f()
-            for batch_i, data in enumerate(self.loader, 1): # There may be one or more loaders, but self.loader is the standard of synchronization
+            # There may be one or more loaders, but self.loader is the standard of synchronization
+            # Recommend modifying self.update() to use other loaders
+            for batch_i, data in enumerate(self.loader, 1):
                 self.iter += 1
                 _iter += 1
                 loss = self.update(data, device, prefix=f'{prefix}[iter_sum: {self.iter}][Epoch: {epoch}/{local_T}][Batch: {batch_i}/{len(self.loader)}]')
@@ -161,7 +170,6 @@ class Node:
 
                 # Cross Validation
                 if (not no_val) and (_iter % self.cfg_train.cv_step==0):
-                # if (not no_val) and (self.iter % self.cfg_train.cv_step==0):
                     patience_end = self.cross_validation(prefix=prefix)
                     # If patience has reached, stop training
                     if patience_end:

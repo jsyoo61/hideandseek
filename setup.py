@@ -15,7 +15,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/jsyoo61/hideandseek",
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(include='hideandseek*'), # excludes tutorial
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

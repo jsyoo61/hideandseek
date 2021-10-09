@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import eval as E
+from . import eval as E
 import tools as T
 
 # %%
