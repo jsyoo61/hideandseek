@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 # %%
 class Node:
     '''Local Node for training'''
-    def __init__(self, model, dataset, cv, cfg_train, criterion, MODEL_DIR, NODE_DIR, name='default'):
+    def __init__(self, model, dataset, cv, cfg_train, criterion, MODEL_DIR, NODE_DIR, name='default', verbose=True, amp=False):
         '''
         :param model: torch.nn.Module object
         :param cv: dict of CrossValidation objects
@@ -44,6 +44,8 @@ class Node:
         self.MODEL_DIR = MODEL_DIR
         self.NODE_DIR = NODE_DIR
         self.name = name
+        self.verbose=verbose
+        self.amp=amp
 
         if self.MODEL_DIR is not None:
             os.makedirs(self.MODEL_DIR, exist_ok=True)
@@ -61,13 +63,19 @@ class Node:
 
         self.n_batch=0
 
+    def print(self, content):
+        if self.verbose:
+            print(content)
+        else:
+            log.info(content)
+
     def set_misc(self):
         '''Set miscellaneous variables'''
         # misc = T.TDict()
         self.misc = T.TDict()
         if self.dataset is not None:
             if hasattr(self.dataset, 'get_f'):
-                log.info('get_f found in loader.dataset')
+                self.print('get_f found in loader.dataset')
 
                 self.misc.get_f = self.dataset.get_f
 
@@ -83,7 +91,7 @@ class Node:
                 score, _patience_end = self._cross_validation(cv)
                 if _patience_end: # If patience_end occurs a single time, return True
                     patience_end=True
-                log.info(f'{prefix}[cv_name: {cv_name}] Validation Score: {score}')
+                self.print(f'{prefix}[cv_name: {cv_name}] Validation Score: {score}')
                 V.track_score(self.cv_tracker[cv_name], score, x=self.iter, label=self.name)
         return patience_end
 
@@ -92,7 +100,7 @@ class Node:
         if type(cv)==V.EarlyStopping:
             score, patience_end = cv.step(self, os.path.join(self.MODEL_DIR, f'model_{self.iter}.pt'))
             if patience_end:
-                log.info('patience met, flushing cv_history')
+                self.print('patience met, flushing cv_history')
                 cv.cv_history.clear()
         else:
             # score = cv.step(self, os.path.join(self.MODEL_DIR, f'model_{self.iter}.pt'))
@@ -100,11 +108,12 @@ class Node:
         return score, patience_end
 
     def step(self, local_T, horizon='epoch', prefix='', new_op=True, no_val=False, restart=False):
-        log.info(f'[Node: {self.name}][step: {local_T} ({horizon})]')
+        self.print(f'[Node: {self.name}][step: {local_T} ({horizon})]')
         device = T.torch.get_device(self.model)
         self.criterion = self.criterion.to(device)
 
-        self.cv.reset()
+        if self.cv is not None:
+            self.cv.reset()
         self.cross_validation(prefix=prefix)
 
         # Initialize every time, since the parameters start in a different location in parameter space, and previous states do not reflect the current state
@@ -139,15 +148,21 @@ class Node:
             y = data['y'].to(device)
             N = len(y)
 
-            y_hat = self.model(x)
-            loss = self.criterion(y_hat, y)
+            if self.amp:
+                # Mixed precision for acceleration
+                with torch.cuda.amp.autocast():
+                    y_hat = self.model(x)
+                    loss = self.criterion(y_hat, y)
+            else:
+                y_hat = self.model(x)
+                loss = self.criterion(y_hat, y)
 
             self.op.zero_grad()
             loss.backward()
             self.op.step()
             self.train_meter.step(loss.item(), N)
 
-            log.info(f'{prefix}[Loss: {loss.item():.7f} (Avg: {self.train_meter.avg:.7f})]')
+            self.print(f'{prefix}[Loss: {loss.item():.7f} (Avg: {self.train_meter.avg:.7f})]')
             return loss.item()
         except Exception as e:
             log.warning(e)
@@ -173,7 +188,7 @@ class Node:
                     patience_end = self.cross_validation(prefix=prefix)
                     # If patience has reached, stop training
                     if patience_end:
-                        log.info('Patience met, stopping training')
+                        self.print('Patience met, stopping training')
                         return None
 
     def _step_step(self, local_T, prefix='', no_val=False, device=None, restart=False):
@@ -205,7 +220,7 @@ class Node:
                 patience_end = self.cross_validation(prefix=prefix)
                 # If patience has reached, stop training
                 if patience_end:
-                    log.info('Patience met, stopping training')
+                    self.print('Patience met, stopping training')
                     return None
 
     def epoch_f(self):
@@ -213,7 +228,7 @@ class Node:
         pass
 
     def targets_type(self):
-        if self.dataset is not None:
+        if self.dataset is not None and hasattr(self.dataset, 'targets_type'):
             return self.dataset.targets_type
         elif self.cv is not None and 'val' in self.cv:
             if type(self.cv['val'].dataset)==list:
@@ -230,10 +245,10 @@ class Node:
             val_dataset = self.cv['val'].dataset
 
         if self._targets_type == 'binary':
-            log.info(f'[Node: {self.name}][post_train] binary classfication: choose threshold based on validation set')
+            self.print(f'[Node: {self.name}][post_train] binary classfication: choose threshold based on validation set')
             self.threshold = E.binary_threshold(self, val_dataset)
         else:
-            log.info(f'[Node: {self.name}][post_train] no post-train procedure for _targets_type: {self._targets_type}')
+            self.print(f'[Node: {self.name}][post_train] no post-train procedure for _targets_type: {self._targets_type}')
 
     '''
     Save/Load functions
@@ -250,7 +265,7 @@ class Node:
         'loss_tracker': self.loss_tracker,
         } # T.TDict raises error when called in T.save_pickle
         if 'get_f' in self.misc:
-            # log.info(f'Saving get_f: {self.misc.get_f}')
+            # self.print(f'Saving get_f: {self.misc.get_f}')
             state_dict['misc.get_f'] = self.misc.get_f
         if hasattr(self, 'threshold'):
             state_dict['threshold'] = self.threshold
@@ -260,15 +275,15 @@ class Node:
         state_dict = dcopy(state_dict)
 
         if 'misc.get_f' in state_dict.keys():
-            log.info(f'Updating get_f: {state_dict["misc.get_f"]}')
+            self.print(f'Updating get_f: {state_dict["misc.get_f"]}')
             self.misc.get_f = state_dict['misc.get_f']
             if self.dataset is not None:
-                log.info('updating get_f to loader...')
+                self.print('updating get_f to loader...')
                 self.dataset.get_f = self.misc.get_f
             del state_dict['misc.get_f']
 
         if 'threshold' in state_dict.keys():
-            log.info(f'Updating threshold: {state_dict["threshold"]}')
+            self.print(f'Updating threshold: {state_dict["threshold"]}')
             self.threshold = state_dict['threshold']
             del state_dict['threshold']
 
@@ -281,28 +296,28 @@ class Node:
         model.state_dict() -> path/model.pt
         '''
         path = self.NODE_DIR if path is None else path
-        log.info(f'[Node: {self.name}]')
+        self.print(f'[Node: {self.name}]')
 
         state_dict_path = os.path.join(path, 'node.p')
-        log.info(f'[save] Saving node info to: {state_dict_path}')
+        self.print(f'[save] Saving node info to: {state_dict_path}')
         state_dict = self.state_dict()
-        log.info(f'[save] state_dict: {list(state_dict.keys())}')
+        self.print(f'[save] state_dict: {list(state_dict.keys())}')
         T.save_pickle(state_dict, state_dict_path)
 
         model_path = os.path.join(path, 'model.pt')
         if best:
             if 'val' not in self.cv:
-                log.info(f'[save][best: {best}] "val" not in self.cv, Saving current model -> [{model_path}]')
+                self.print(f'[save][best: {best}] "val" not in self.cv, Saving current model -> [{model_path}]')
                 torch.save(self.model.state_dict(), model_path)
             else:
                 if self.cv['val'].best_model != None:
-                    log.info(f'[save][best: {best}] Saving [{self.cv["val"].best_model}] -> [{model_path}]')
+                    self.print(f'[save][best: {best}] Saving [{self.cv["val"].best_model}] -> [{model_path}]')
                     shutil.copy(self.cv["val"].best_model, model_path)
                 else:
-                    log.info(f'[save][best: {best}] no best_model in self.cv["val"], Saving current model -> [{model_path}]')
+                    self.print(f'[save][best: {best}] no best_model in self.cv["val"], Saving current model -> [{model_path}]')
                     torch.save(self.model.state_dict(), model_path)
         else:
-            log.info(f'[save][best: {best}] Saving model to: {model_path}')
+            self.print(f'[save][best: {best}] Saving model to: {model_path}')
             torch.save(self.model.state_dict(), model_path)
 
     def load(self, path=None):
@@ -312,14 +327,14 @@ class Node:
         path/model.pt -> model.state_dict
         '''
         path = self.NODE_DIR if path is None else path
-        log.info(f'[Node: {self.name}]')
+        self.print(f'[Node: {self.name}]')
 
         state_dict_path = os.path.join(path, 'node.p')
-        log.info(f'[load] Loading from path: {state_dict_path}')
+        self.print(f'[load] Loading from path: {state_dict_path}')
         state_dict = T.load_pickle(state_dict_path)
-        log.info(f'[load] Updating: {list(state_dict.keys())}')
+        self.print(f'[load] Updating: {list(state_dict.keys())}')
         self.load_state_dict(state_dict)
 
         model_path = os.path.join(path, 'model.pt')
-        log.info(f'[load] Loading model from: {model_path}')
+        self.print(f'[load] Loading model from: {model_path}')
         self.model.load_state_dict(torch.load(model_path))

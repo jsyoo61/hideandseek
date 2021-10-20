@@ -169,3 +169,6 @@ $RECYCLE.BIN/
 dist/
 .github/
 upload.*
+/ftpconfigs
+.ftpconfig
+.ftpignore

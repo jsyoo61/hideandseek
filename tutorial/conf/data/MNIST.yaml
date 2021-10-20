@@ -1,4 +1,6 @@
 # @package _global_
+defaults:
+  - /loss: weighted_crossentropy_loss
 
 data:
   dataset:

@@ -1,3 +1,4 @@
 
 _target_: model.Resnet
 version: 18
+pretrained: False

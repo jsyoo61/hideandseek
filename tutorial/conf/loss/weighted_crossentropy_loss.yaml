@@ -1,0 +1,4 @@
+# @package _global_
+train:
+  loss:
+    _target_: loss.weighted_crossentropy_loss

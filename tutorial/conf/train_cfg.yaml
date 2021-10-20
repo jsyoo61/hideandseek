@@ -1,8 +1,13 @@
+defaults:
+  - /path
+  - data: MNIST
+  - model: Resnet
+
 
 train:
   epoch: 100
   lr: 1e-3
-  batch_size: 16
+  batch_size: 164
   patience: 40
   weight_decay: 1e-3
   cv_step: 10

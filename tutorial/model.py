@@ -7,7 +7,16 @@ import torchvision
 log = logging.getLogger(__name__)
 
 # %%
-def Resnet(input_shape=None, pretrained=False, progress=True, version=18, in_channels=3, n_classes=10):
+def Resnet(version=18, pretrained=False, progress=True, info=None):
+    if info is None:
+        input_shape=None
+        in_channels=3
+        n_classes=10
+    else:
+        input_shape = info['input_shape']
+        in_channels = info['in_channels']
+        n_classes = info['n_classes']
+
     log.info(f'input_shape: {input_shape}')
     allowed_version = ['18', '34', '50', '101', '152']
     assert str(version) in allowed_version, f'version must be one of: {allowed_version}'
