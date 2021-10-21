@@ -44,8 +44,8 @@ class Node:
         self.MODEL_DIR = MODEL_DIR
         self.NODE_DIR = NODE_DIR
         self.name = name
-        self.verbose=verbose
-        self.amp=amp
+        self.verbose = verbose
+        self.amp = amp
 
         if self.MODEL_DIR is not None:
             os.makedirs(self.MODEL_DIR, exist_ok=True)
@@ -71,7 +71,6 @@ class Node:
 
     def set_misc(self):
         '''Set miscellaneous variables'''
-        # misc = T.TDict()
         self.misc = T.TDict()
         if self.dataset is not None:
             if hasattr(self.dataset, 'get_f'):
@@ -108,6 +107,9 @@ class Node:
         return score, patience_end
 
     def step(self, local_T, horizon='epoch', prefix='', new_op=True, no_val=False, restart=False):
+        '''
+        Trains the model with the specified duration.
+        '''
         self.print(f'[Node: {self.name}][step: {local_T} ({horizon})]')
         device = T.torch.get_device(self.model)
         self.criterion = self.criterion.to(device)
@@ -116,11 +118,10 @@ class Node:
             self.cv.reset()
         self.cross_validation(prefix=prefix)
 
-        # Initialize every time, since the parameters start in a different location in parameter space, and previous states do not reflect the current state
-        if new_op:
-            # weight_decay = self.cfg_train['weight_decay'] if 'weight_decay' in self.cfg_train else None
-            # self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=weight_decay)
-            self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=self.cfg_train['weight_decay'])
+        if new_op or not hasattr(self, 'op'):
+            weight_decay = self.cfg_train['weight_decay'] if 'weight_decay' in self.cfg_train else None
+            self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=weight_decay)
+            # self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=self.cfg_train['weight_decay'])
         self.loss_tracker = T.modules.ValueTracker()
         self.generate_loader()
 

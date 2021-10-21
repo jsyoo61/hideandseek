@@ -18,7 +18,7 @@ def isbetter(score_best: float, score: float, increase_better: bool):
     return (not increase_better and score<score_best) or (increase_better and score>score_best)
 
 # %%
-class CrossValidation:
+class Validation:
     def __init__(self, dataset, scorer):
         '''
         :param dataset: torch.utils.data.Dataset object or list of torch.utils.data.Dataset objects
@@ -56,7 +56,7 @@ class CrossValidation:
     def reset(self):
         pass
 
-class EarlyStopping(CrossValidation):
+class EarlyStopping(Validation):
     def __init__(self, dataset, scorer, primary_score=None, increase_better=False, discard_best=True, patience=None):
         '''
         :param dataset: dataloader or list of dataloaders

@@ -7,7 +7,7 @@ defaults:
 train:
   epoch: 100
   lr: 1e-3
-  batch_size: 164
+  batch_size: 64
   patience: 40
   weight_decay: 1e-3
   cv_step: 10
