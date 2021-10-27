@@ -5,12 +5,13 @@
 import logging
 import os
 import shutil
+from copy import deepcopy as dcopy
 
 import torch
 import torch.optim as optim
 import torch.utils.data as D
 
-import tools as T
+import tools # since T is used as a variable in this module
 import tools.torch
 import tools.modules
 
@@ -39,7 +40,7 @@ class Node:
         self.model = model
         self.dataset = dataset
         self.cv = cv
-        self.cfg_train = cfg_train
+        self.cfg_train = dcopy(cfg_train)
         self.criterion = criterion
         self.MODEL_DIR = MODEL_DIR
         self.NODE_DIR = NODE_DIR
@@ -55,9 +56,9 @@ class Node:
         self.set_misc()
 
         self.iter = 0
-        self.train_meter = T.AverageMeter()
+        self.train_meter = tools.modules.AverageMeter()
         self.set_cv(cv)
-        self.loss_tracker = T.modules.ValueTracker()
+        self.loss_tracker = tools.modules.ValueTracker()
 
         self._targets_type = self.targets_type()
 
@@ -71,7 +72,7 @@ class Node:
 
     def set_misc(self):
         '''Set miscellaneous variables'''
-        self.misc = T.TDict()
+        self.misc = tools.TDict()
         if self.dataset is not None:
             if hasattr(self.dataset, 'get_f'):
                 self.print('get_f found in loader.dataset')
@@ -81,7 +82,7 @@ class Node:
     def set_cv(self, cv):
         self.cv = cv
         if self.cv is not None:
-            self.cv_tracker = {cv_name:{s:T.modules.ValueTracker() for s in cv.scorer.keys()} for cv_name, cv in self.cv.items()}
+            self.cv_tracker = {cv_name:{s:tools.modules.ValueTracker() for s in cv.scorer.keys()} for cv_name, cv in self.cv.items()}
 
     def cross_validation(self, prefix=''):
         patience_end = False
@@ -106,29 +107,33 @@ class Node:
             score = cv.step(self)
         return score, patience_end
 
-    def step(self, local_T, horizon='epoch', prefix='', new_op=True, no_val=False, restart=False):
+    def step(self, T=None, horizon='epoch', prefix='', new_op=True, no_val=False, restart=False):
         '''
         Trains the model with the specified duration.
         '''
-        self.print(f'[Node: {self.name}][step: {local_T} ({horizon})]')
-        device = T.torch.get_device(self.model)
+        if T is None: # When no tools is
+            T = self.cfg_train['epoch']
+
+        self.print(f'[Node: {self.name}][step: {T} ({horizon})]')
+        device = tools.torch.get_device(self.model)
         self.criterion = self.criterion.to(device)
 
+        if 'cv_step' not in self.cfg_train:
+            self.cfg_train.cv_step = len(self.loader)
         if self.cv is not None:
             self.cv.reset()
-        self.cross_validation(prefix=prefix)
+            self.cross_validation(prefix=prefix)
 
         if new_op or not hasattr(self, 'op'):
-            weight_decay = self.cfg_train['weight_decay'] if 'weight_decay' in self.cfg_train else None
-            self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=weight_decay)
-            # self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=self.cfg_train['weight_decay'])
-        self.loss_tracker = T.modules.ValueTracker()
+            self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=self.cfg_train['weight_decay']) if 'weight_decay' in self.cfg_train \
+                        else optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'])
+        self.loss_tracker = tools.modules.ValueTracker()
         self.generate_loader()
 
         if horizon == 'epoch':
-            self._step_epoch(local_T=local_T, prefix=prefix, no_val=no_val, device=device)
+            self._step_epoch(T=T, prefix=prefix, no_val=no_val, device=device)
         elif horizon=='step':
-            self._step_step(local_T=local_T, prefix=prefix, no_val=no_val, device=device, restart=restart)
+            self._step_step(T=T, prefix=prefix, no_val=no_val, device=device, restart=restart)
         else:
             raise Exception(f'Invalid horizon type: {horizon}')
 
@@ -169,11 +174,11 @@ class Node:
             log.warning(e)
             import pdb; pdb.set_trace()
 
-    def _step_epoch(self, local_T, prefix='', no_val=False, device=None):
-        device = device if device is not None else T.torch.get_device(self.model)
+    def _step_epoch(self, T, prefix='', no_val=False, device=None):
+        device = device if device is not None else tools.torch.get_device(self.model)
 
         _iter = 0
-        for epoch in range(1, local_T+1):
+        for epoch in range(1, T+1):
             self.train_meter.reset()
             self.epoch_f()
             # There may be one or more loaders, but self.loader is the standard of synchronization
@@ -181,22 +186,22 @@ class Node:
             for batch_i, data in enumerate(self.loader, 1):
                 self.iter += 1
                 _iter += 1
-                loss = self.update(data, device, prefix=f'{prefix}[iter_sum: {self.iter}][Epoch: {epoch}/{local_T}][Batch: {batch_i}/{len(self.loader)}]')
+                loss = self.update(data, device, prefix=f'{prefix}[iter_sum: {self.iter}][Epoch: {epoch}/{T}][Batch: {batch_i}/{len(self.loader)}]')
                 self.loss_tracker.step(self.iter, loss)
 
                 # Cross Validation
-                if (not no_val) and (_iter % self.cfg_train.cv_step==0):
+                if (self.cv is not None) and (not no_val) and (_iter % self.cfg_train.cv_step==0):
                     patience_end = self.cross_validation(prefix=prefix)
                     # If patience has reached, stop training
                     if patience_end:
                         self.print('Patience met, stopping training')
                         return None
 
-    def _step_step(self, local_T, prefix='', no_val=False, device=None, restart=False):
-        device = device if device is not None else T.torch.get_device(self.model)
+    def _step_step(self, T, prefix='', no_val=False, device=None, restart=False):
+        device = device if device is not None else tools.torch.get_device(self.model)
         if hasattr(self, '_loader_inst'): del self._loader_inst
 
-        for i in range(1, local_T+1):
+        for i in range(1, T+1):
             # Get Data
             try:
                 if hasattr(self, '_loader_inst'):
@@ -212,11 +217,11 @@ class Node:
                 self.n_batch = 1
 
             self.iter += 1
-            loss = self.update(data, device, prefix=f'{prefix}[iter_sum: {self.iter}][Iter: {i}/{local_T}][Batch: {self.n_batch}/{len(self.loader)}]')
+            loss = self.update(data, device, prefix=f'{prefix}[iter_sum: {self.iter}][Iter: {i}/{T}][Batch: {self.n_batch}/{len(self.loader)}]')
             self.loss_tracker.step(self.iter, loss)
 
             # Cross Validation
-            if (not no_val) and (i % self.cfg_train.cv_step==0):
+            if (self.cv is not None) and (not no_val) and (i % self.cfg_train.cv_step==0):
             # if (not no_val) and (self.iter % self.cfg_train.cv_step==0):
                 patience_end = self.cross_validation(prefix=prefix)
                 # If patience has reached, stop training
@@ -264,9 +269,8 @@ class Node:
         state_dict = {
         'cv_tracker': self.cv_tracker,
         'loss_tracker': self.loss_tracker,
-        } # T.TDict raises error when called in T.save_pickle
+        } # tools.TDict raises error when called in tools.save_pickle
         if 'get_f' in self.misc:
-            # self.print(f'Saving get_f: {self.misc.get_f}')
             state_dict['misc.get_f'] = self.misc.get_f
         if hasattr(self, 'threshold'):
             state_dict['threshold'] = self.threshold
@@ -303,7 +307,7 @@ class Node:
         self.print(f'[save] Saving node info to: {state_dict_path}')
         state_dict = self.state_dict()
         self.print(f'[save] state_dict: {list(state_dict.keys())}')
-        T.save_pickle(state_dict, state_dict_path)
+        tools.save_pickle(state_dict, state_dict_path)
 
         model_path = os.path.join(path, 'model.pt')
         if best:
@@ -332,7 +336,7 @@ class Node:
 
         state_dict_path = os.path.join(path, 'node.p')
         self.print(f'[load] Loading from path: {state_dict_path}')
-        state_dict = T.load_pickle(state_dict_path)
+        state_dict = tools.load_pickle(state_dict_path)
         self.print(f'[load] Updating: {list(state_dict.keys())}')
         self.load_state_dict(state_dict)
 
