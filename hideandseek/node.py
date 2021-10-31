@@ -11,7 +11,7 @@ import torch
 import torch.optim as optim
 import torch.utils.data as D
 
-import tools # since T is used as a variable in this module
+import tools # since T is used as a variable in this module, refrain from "import tools as T"
 import tools.torch
 import tools.modules
 
@@ -30,12 +30,28 @@ class Node:
     def __init__(self, model, dataset, cv, cfg_train, criterion, MODEL_DIR, NODE_DIR, name='default', verbose=True, amp=False):
         '''
         :param model: torch.nn.Module object
-        :param cv: dict of CrossValidation objects
+        :param dataset: torch.utils.data.Dataset object
+            This dataset is used for training.
+            Recommended return format from dataset is: {'x': x, 'y': y}
+            where 'x' is the input, and 'y' is the target values.
+
+
+
+        :param cv: dict of Validation objects
 
         :param cfg_train: dict-like object which contains:
-        lr
-        weight_decay
-        patience
+            lr
+            batch_size
+            weight_decay (optional)
+            patience (optional)
+
+        :param criterion: torch.nn.Module object, used to compute loss function
+
+        Recommended way of making hs.node.Node object is like the following:
+
+            kwargs = {'model': model, 'dataset': train_dataset, 'cv': None, 'cfg_train': cfg.train,
+                    'criterion': criterion, 'MODEL_DIR': path['model'], 'NODE_DIR': path['node'], 'verbose': True, 'amp': True}
+            node = hs.node.Node(**kwargs)
         '''
         self.model = model
         self.dataset = dataset

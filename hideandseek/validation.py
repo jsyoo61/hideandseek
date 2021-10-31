@@ -117,7 +117,7 @@ class EarlyStopping(Validation):
             self.best_score = float('inf')
 
 # %%
-class CVDict(dict):
+class VDict(dict):
     def reset(self):
         for cv in self.values():
             cv.reset()

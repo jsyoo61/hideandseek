@@ -42,7 +42,7 @@ criterion = hydra.utils.instantiate(cfg.train.loss, dataset=train_dataset)
 model = hydra.utils.instantiate(cfg.model, info=data['info'])
 log.info(model)
 kwargs = {'model': model, 'dataset': train_dataset, 'cv': None, 'cfg_train': cfg.train,
-        'criterion': criterion, 'MODEL_DIR': path['model'], 'NODE_DIR': path['node'], 'name': 'server', 'amp': True}
+        'criterion': criterion, 'MODEL_DIR': path['model'], 'NODE_DIR': path['node'], 'verbose': True, 'amp': True}
 
 node = hs.N.Node(**kwargs)
 

@@ -54,7 +54,7 @@ def reproducible_worker_dict():
     g.manual_seed(0)
     return {'worker_init_fn': seed_worker, 'generator': g}
 
-test_type_list = [None, 'categorical', 'multihead_classification']
+test_type_list = [None, 'categorical', 'multihead_classification', 'autoencode']
 def test(node, dataset, batch_size=64, test_type=None):
     assert test_type in test_type_list, f'test_type must be one of {test_type_list}, received: {test_type}'
 
@@ -89,6 +89,8 @@ def get_test_f(test_type):
         return _test_categorical
     elif test_type == 'multihead_classification':
         return _test_multihead_categorical
+    elif test_type == 'autoencode':
+        return _test_autoencode
     else:
         raise Exception(f'unknown test_type: {test_type}')
 
@@ -98,6 +100,8 @@ def get_result_dict(test_type):
         result_list = ['y', 'y_hat']
     elif test_type in ['categorical', 'multihead_classification']:
         result_list = ['y', 'y_score', 'y_pred']
+    elif test_type == 'autoencode':
+        result_list = ['x', 'z', 'x_hat']
     else:
         raise Exception(f'unknown test_type: {test_type}')
     return {r:[] for r in result_list}
@@ -138,6 +142,18 @@ def _test_multihead_categorical(data, model, result_dict, device=None):
 
     return result_dict
 
+def _test_autoencode(data, model, result_dict, device=None):
+    x = data['x'].to(device)
+    z = model.encoder(x)
+    x_hat = torch.sigmoid(model.decoder(z))
+
+    x, z, x_hat = x.cpu().numpy(), z.cpu().numpy(), x_hat.cpu().numpy()
+
+    result_dict['x'].append(x)
+    result_dict['z'].append(z)
+    result_dict['x_hat'].append(x_hat)
+
+    return result_dict
 
 # %%
 '''
@@ -301,3 +317,7 @@ def multihead_classification_score(result):
     'multihead_accuracy_score': multihead_accuracy
     }
     return scores
+
+# %%
+def save_score():
+    f

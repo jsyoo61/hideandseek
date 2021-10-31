@@ -1,7 +1,14 @@
 # hideandseek
 deep learning and privacy preserving deep learning library.
 
-Currently integrating from experiment codes. (26.9.2021.)
+Why use `hideandseek`?
+
+- Run multiple deep learning experiements in parallel on multiples GPUs
+- Design and analyze experiments scientifically by modifying variables ([hydra](https://hydra.cc/docs/intro/))
+- Modularized machine learning pipeline allows using the same script for all types of experiments
+- The same training code can be run in privacy preserving setting by minimal modifications
+
+Currently integrating from experiment codes. (30.10.2021.)
 
     import torch
     from omegaconf import OmegaConf
@@ -28,3 +35,8 @@ Currently integrating from experiment codes. (26.9.2021.)
 
     test_results = hs.eval.test(node)
     scores = hs.eval.scores(test_results)
+
+
+To do
+- [ ] Migrate modules from experiment codes
+- [ ] GUI for generating experiment scripts when conducting variable sweeps
