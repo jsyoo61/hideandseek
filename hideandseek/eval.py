@@ -45,6 +45,7 @@ def reproducible_worker_dict():
     '''Generate separate random number generators for workers,
     so that the global random state is not consumed,
     thereby ensuring reproducibility'''
+    import random
     def seed_worker(worker_id):
         worker_seed = torch.initial_seed() % 2**32
         np.random.seed(worker_seed)
@@ -55,11 +56,19 @@ def reproducible_worker_dict():
     return {'worker_init_fn': seed_worker, 'generator': g}
 
 test_type_list = [None, 'categorical', 'multihead_classification', 'autoencode']
-def test(node, dataset, batch_size=64, test_type=None):
-    assert test_type in test_type_list, f'test_type must be one of {test_type_list}, received: {test_type}'
-
-    test_f = get_test_f(test_type)
-    result_dict = get_result_dict(test_type)
+def test(node, dataset, batch_size=64, test_type=None, test_f=None, result_dict=None, num_workers=0, amp=False):
+    '''
+    
+    '''
+    # Safety check
+    if test_f is not None and result_dict is not None:
+        assert callable(test_f) and issubclass(result_dict, dict), f'test_f must be callable and result_dict must be dict-like'
+    elif test_f is None and result_dict is None::
+        assert test_type in test_type_list, f'test_type must be one of {test_type_list}, received: {test_type}'
+        test_f = get_test_f(test_type)
+        result_dict = get_result_dict(test_type)
+    else:
+        raise Exception(f'test_f and result_dict must either both be provided or None, received [test_f: {test_f}][result_dict: {result_dict}]')
 
     model = node.model
     device = T.torch.get_device(model) # Test on the model's device
@@ -67,13 +76,19 @@ def test(node, dataset, batch_size=64, test_type=None):
 
     dataset, misc_temp = transform_misc(node, dataset)
     kwargs_dataloader = reproducible_worker_dict()
-    test_loader = D.DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=False, **kwargs_dataloader)
+    test_loader = D.DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=num_workers, **kwargs_dataloader)
 
     with torch.no_grad():
-        for data in test_loader:
-            result_dict = test_f(data=data, model=model, result_dict=result_dict, device=device)
+        if amp:
+            # Mixed precision for acceleration
+            with torch.cuda.amp.autocast():
+                for data in test_loader:
+                    result_dict = test_f(data=data, model=model, result_dict=result_dict, device=device)
+        else:
+            for data in test_loader:
+                result_dict = test_f(data=data, model=model, result_dict=result_dict, device=device)
 
-    result_dict = {k: np.concatenate(v, axis=0) for k, v in result_dict.items()}
+    result_dict = {k: np.concatenate(v, axis=0) if len(v)>0 else v for k, v in result_dict.items()}
 
     model.train()
 

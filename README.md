@@ -1,10 +1,12 @@
 # hideandseek
-deep learning and privacy preserving deep learning library.
+privacy preserving deep learning library.
 
 Why use `hideandseek`?
 
-- Run multiple deep learning experiements in parallel on multiples GPUs
-- Design and analyze experiments scientifically by modifying variables ([hydra](https://hydra.cc/docs/intro/))
+- Easy training & saving deep learning models along with other modules (ex: preprocessing modules) required in inference
+- Run multiple deep learning experiments in parallel on multiples GPUs (powered by [hydra](https://hydra.cc/docs/intro/), and python multiprocessing)
+- Design and analyze experiments scientifically by modifying variables (powered by [hydra](https://hydra.cc/docs/intro/))
+
 - Modularized machine learning pipeline allows using the same script for all types of experiments
 - The same training code can be run in privacy preserving setting by minimal modifications
 
@@ -26,17 +28,17 @@ Currently integrating from experiment codes. (30.10.2021.)
     }
     node = hs.Node(**kwargs)
 
-    model.to(device)
+    node.model.to(device)
     node.step(local_T=20, horizon='epoch') # trains for 20 epochs
     # node.step(local_T=1000, horizon='step') # trains for 1000 steps
-    model.cpu()
+    node.model.cpu()
 
     node.save()
 
     test_results = hs.eval.test(node)
     scores = hs.eval.scores(test_results)
 
-
 To do
 - [ ] Migrate modules from experiment codes
+- [ ] Draw figures to explain hideandseek
 - [ ] GUI for generating experiment scripts when conducting variable sweeps

@@ -7,8 +7,11 @@ from omegaconf import OmegaConf, DictConfig
 import torch
 import hideandseek as hs
 
+# %%
+# to enable logging from hideandseek
+# When using command line interface, there's no need to set the log level (feature from hydra)
 log = logging.getLogger()
-log.setLevel(logging.INFO) # to enable logging from hideandseek
+log.setLevel(logging.INFO)
 
 # %%
 import os
@@ -17,6 +20,7 @@ PROJECT_DIR='/home/jaesungyoo/programming/hideandseek/tutorial'
 os.chdir(PROJECT_DIR)
 os.listdir()
 
+# %%
 hydra.core.global_hydra.GlobalHydra.instance().clear()
 hydra.initialize_config_dir(config_dir=os.path.join(PROJECT_DIR, 'conf'))
 overrides = [
@@ -58,4 +62,6 @@ node.save(best=True)
 node.load()
 
 # %%
+# Evaluation
 node.model.to(device)
+hs.E.test(node, test_dataset)

@@ -100,18 +100,18 @@ class Node:
         if self.cv is not None:
             self.cv_tracker = {cv_name:{s:tools.modules.ValueTracker() for s in cv.scorer.keys()} for cv_name, cv in self.cv.items()}
 
-    def cross_validation(self, prefix=''):
+    def validate(self, prefix=''):
         patience_end = False
         if self.cv is not None:
             for cv_name, cv in self.cv.items():
-                score, _patience_end = self._cross_validation(cv)
+                score, _patience_end = self._validation(cv)
                 if _patience_end: # If patience_end occurs a single time, return True
                     patience_end=True
                 self.print(f'{prefix}[cv_name: {cv_name}] Validation Score: {score}')
                 V.track_score(self.cv_tracker[cv_name], score, x=self.iter, label=self.name)
         return patience_end
 
-    def _cross_validation(self, cv):
+    def _validation(self, cv):
         patience_end = False
         if type(cv)==V.EarlyStopping:
             score, patience_end = cv.step(self, os.path.join(self.MODEL_DIR, f'model_{self.iter}.pt'))
@@ -123,7 +123,7 @@ class Node:
             score = cv.step(self)
         return score, patience_end
 
-    def step(self, T=None, horizon='epoch', prefix='', new_op=True, no_val=False, restart=False):
+    def step(self, T=None, horizon='epoch', new_op=True, no_val=False):
         '''
         Trains the model with the specified duration.
         '''
@@ -138,18 +138,20 @@ class Node:
             self.cfg_train.cv_step = len(self.loader)
         if self.cv is not None:
             self.cv.reset()
-            self.cross_validation(prefix=prefix)
+            self.validate(prefix=prefix)
 
+        # Make new optimizer
         if new_op or not hasattr(self, 'op'):
+            # Weight decay optional
             self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=self.cfg_train['weight_decay']) if 'weight_decay' in self.cfg_train \
                         else optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'])
         self.loss_tracker = tools.modules.ValueTracker()
         self.generate_loader()
 
         if horizon == 'epoch':
-            self._step_epoch(T=T, prefix=prefix, no_val=no_val, device=device)
+            self._step_epoch(T=T, no_val=no_val, device=device)
         elif horizon=='step':
-            self._step_step(T=T, prefix=prefix, no_val=no_val, device=device, restart=restart)
+            self._step_step(T=T, no_val=no_val, device=device)
         else:
             raise Exception(f'Invalid horizon type: {horizon}')
 
@@ -207,13 +209,13 @@ class Node:
 
                 # Cross Validation
                 if (self.cv is not None) and (not no_val) and (_iter % self.cfg_train.cv_step==0):
-                    patience_end = self.cross_validation(prefix=prefix)
+                    patience_end = self.validate(prefix=prefix)
                     # If patience has reached, stop training
                     if patience_end:
                         self.print('Patience met, stopping training')
                         return None
 
-    def _step_step(self, T, prefix='', no_val=False, device=None, restart=False):
+    def _step_step(self, T, prefix='', no_val=False, device=None):
         device = device if device is not None else tools.torch.get_device(self.model)
         if hasattr(self, '_loader_inst'): del self._loader_inst
 
@@ -239,7 +241,7 @@ class Node:
             # Cross Validation
             if (self.cv is not None) and (not no_val) and (i % self.cfg_train.cv_step==0):
             # if (not no_val) and (self.iter % self.cfg_train.cv_step==0):
-                patience_end = self.cross_validation(prefix=prefix)
+                patience_end = self.validate(prefix=prefix)
                 # If patience has reached, stop training
                 if patience_end:
                     self.print('Patience met, stopping training')
@@ -283,7 +285,7 @@ class Node:
     '''
     def state_dict(self):
         state_dict = {
-        'cv_tracker': self.cv_tracker,
+        # 'cv_tracker': self.cv_tracker,
         'loss_tracker': self.loss_tracker,
         } # tools.TDict raises error when called in tools.save_pickle
         if 'get_f' in self.misc:

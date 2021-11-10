@@ -19,7 +19,7 @@ def isbetter(score_best: float, score: float, increase_better: bool):
 
 # %%
 class Validation:
-    def __init__(self, dataset, scorer):
+    def __init__(self, dataset, scorer, test_batch_size=64):
         '''
         :param dataset: torch.utils.data.Dataset object or list of torch.utils.data.Dataset objects
         :param scorer: single or dict of scorer functions which take (y_hat, y) and returns a single score
@@ -28,18 +28,19 @@ class Validation:
         self.scorer = scorer
 
     def step(self, node, name=None):
-        y_list = []
-        y_hat_list = []
+        y_list, y_hat_list = [], []
+        amp = node.amp
+
         # If dataset is a list
         if type(self.dataset) == list:
             for dataset_ in self.dataset:
-                results = E.test(node, dataset_)
+                results = E.test(node, dataset_, test_batch_size=self.test_batch_size, amp=amp)
                 y_list.append(results['y'])
                 y_hat_list.append(results['y_hat'])
 
         # Single dataset
         else:
-            results = E.test(node, self.dataset)
+            results = E.test(node, self.dataset, test_batch_size=self.test_batch_size, amp=amp)
             y_list.append(results['y'])
             y_hat_list.append(results['y_hat'])
 
