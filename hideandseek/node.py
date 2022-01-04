@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 # %%
 class Node:
     '''Local Node for training'''
-    def __init__(self, model, dataset, cv, cfg_train, criterion, MODEL_DIR, NODE_DIR, name='default', verbose=True, amp=False):
+    def __init__(self, model, dataset, cfg_train, criterion, MODEL_DIR, NODE_DIR, validation=None, name='default', verbose=True, amp=False):
         '''
         :param model: torch.nn.Module object
         :param dataset: torch.utils.data.Dataset object
@@ -37,7 +37,7 @@ class Node:
 
 
 
-        :param cv: dict of Validation objects
+        :param validation: dict of Validation objects
 
         :param cfg_train: dict-like object which contains:
             lr
@@ -49,13 +49,13 @@ class Node:
 
         Recommended way of making hs.node.Node object is like the following:
 
-            kwargs = {'model': model, 'dataset': train_dataset, 'cv': None, 'cfg_train': cfg.train,
+            kwargs = {'model': model, 'dataset': train_dataset, 'validation': None, 'cfg_train': cfg.train,
                     'criterion': criterion, 'MODEL_DIR': path['model'], 'NODE_DIR': path['node'], 'verbose': True, 'amp': True}
             node = hs.node.Node(**kwargs)
         '''
         self.model = model
         self.dataset = dataset
-        self.cv = cv
+        self.validation = validation
         self.cfg_train = dcopy(cfg_train)
         self.criterion = criterion
         self.MODEL_DIR = MODEL_DIR
@@ -73,7 +73,7 @@ class Node:
 
         self.iter = 0
         self.train_meter = tools.modules.AverageMeter()
-        self.set_cv(cv)
+        self.set_cv(validation)
         self.loss_tracker = tools.modules.ValueTracker()
 
         self._targets_type = self.targets_type()
@@ -95,32 +95,32 @@ class Node:
 
                 self.misc.get_f = self.dataset.get_f
 
-    def set_cv(self, cv):
-        self.cv = cv
-        if self.cv is not None:
-            self.cv_tracker = {cv_name:{s:tools.modules.ValueTracker() for s in cv.scorer.keys()} for cv_name, cv in self.cv.items()}
+    def set_cv(self, validation):
+        self.validation = validation
+        if self.validation is not None:
+            self.cv_tracker = {cv_name:{s:tools.modules.ValueTracker() for s in validation.scorer.keys()} for cv_name, validation in self.validation.items()}
 
     def validate(self, prefix=''):
         patience_end = False
-        if self.cv is not None:
-            for cv_name, cv in self.cv.items():
-                score, _patience_end = self._validation(cv)
+        if self.validation is not None:
+            for cv_name, validation in self.validation.items():
+                score, _patience_end = self._validation(validation)
                 if _patience_end: # If patience_end occurs a single time, return True
                     patience_end=True
                 self.print(f'{prefix}[cv_name: {cv_name}] Validation Score: {score}')
                 V.track_score(self.cv_tracker[cv_name], score, x=self.iter, label=self.name)
         return patience_end
 
-    def _validation(self, cv):
+    def _validation(self, validation):
         patience_end = False
-        if type(cv)==V.EarlyStopping:
-            score, patience_end = cv.step(self, os.path.join(self.MODEL_DIR, f'model_{self.iter}.pt'))
+        if type(validation)==V.EarlyStopping:
+            score, patience_end = validation.step(self, os.path.join(self.MODEL_DIR, f'model_{self.iter}.pt'))
             if patience_end:
                 self.print('patience met, flushing cv_history')
-                cv.cv_history.clear()
+                validation.cv_history.clear()
         else:
-            # score = cv.step(self, os.path.join(self.MODEL_DIR, f'model_{self.iter}.pt'))
-            score = cv.step(self)
+            # score = validation.step(self, os.path.join(self.MODEL_DIR, f'model_{self.iter}.pt'))
+            score = validation.step(self)
         return score, patience_end
 
     def step(self, T=None, horizon='epoch', new_op=True, no_val=False):
@@ -136,8 +136,8 @@ class Node:
 
         if 'cv_step' not in self.cfg_train:
             self.cfg_train.cv_step = len(self.loader)
-        if self.cv is not None:
-            self.cv.reset()
+        if self.validation is not None:
+            self.validation.reset()
             self.validate(prefix=prefix)
 
         # Make new optimizer
@@ -167,9 +167,17 @@ class Node:
             log.warning('No dataset found. Skipping generate_loader()')
 
     def update(self, data, device, prefix=''):
+        '''
+        This is where a lot of errors happen, so there's a pdb to save time.
+        When there's error within a single update, use pdb to figure out the shape, device, tensor dtype, and more.
+        '''
         try:
-            x = data['x'].to(device)
-            y = data['y'].to(device)
+            if type(data)==tuple:
+                x, y = data
+            elif type(data)==dict:
+                x, y = data['x'].to(device), data['y'].to(device)
+            else:
+                raise Exception(f'return type from dataset undefined in hideandseek.N.Node: {type(data)}')
             N = len(y)
 
             if self.amp:
@@ -208,7 +216,7 @@ class Node:
                 self.loss_tracker.step(self.iter, loss)
 
                 # Cross Validation
-                if (self.cv is not None) and (not no_val) and (_iter % self.cfg_train.cv_step==0):
+                if (self.validation is not None) and (not no_val) and (_iter % self.cfg_train.cv_step==0):
                     patience_end = self.validate(prefix=prefix)
                     # If patience has reached, stop training
                     if patience_end:
@@ -239,7 +247,7 @@ class Node:
             self.loss_tracker.step(self.iter, loss)
 
             # Cross Validation
-            if (self.cv is not None) and (not no_val) and (i % self.cfg_train.cv_step==0):
+            if (self.validation is not None) and (not no_val) and (i % self.cfg_train.cv_step==0):
             # if (not no_val) and (self.iter % self.cfg_train.cv_step==0):
                 patience_end = self.validate(prefix=prefix)
                 # If patience has reached, stop training
@@ -254,19 +262,19 @@ class Node:
     def targets_type(self):
         if self.dataset is not None and hasattr(self.dataset, 'targets_type'):
             return self.dataset.targets_type
-        elif self.cv is not None and 'val' in self.cv:
-            if type(self.cv['val'].dataset)==list:
-                return self.cv['val'].dataset[0].targets_type
+        elif self.validation is not None and 'val' in self.validation:
+            if type(self.validation['val'].dataset)==list:
+                return self.validation['val'].dataset[0].targets_type
             else:
-                return self.cv['val'].dataset.targets_type
+                return self.validation['val'].dataset.targets_type
         else:
             return None
 
     def post_train(self, val_dataset=None):
-        # Deafult to self.cv['val'].dataset
+        # Deafult to self.validation['val'].dataset
         if val_dataset is None:
-            assert 'val' in self.cv, f'if no val_dataset is given, then "val" must exist in self.cv: {self.cv.keys()}'
-            val_dataset = self.cv['val'].dataset
+            assert 'val' in self.validation, f'if no val_dataset is given, then "val" must exist in self.validation: {self.validation.keys()}'
+            val_dataset = self.validation['val'].dataset
 
         if self._targets_type == 'binary':
             self.print(f'[Node: {self.name}][post_train] binary classfication: choose threshold based on validation set')
@@ -329,15 +337,15 @@ class Node:
 
         model_path = os.path.join(path, 'model.pt')
         if best:
-            if 'val' not in self.cv:
-                self.print(f'[save][best: {best}] "val" not in self.cv, Saving current model -> [{model_path}]')
+            if 'val' not in self.validation:
+                self.print(f'[save][best: {best}] "val" not in self.validation, Saving current model -> [{model_path}]')
                 torch.save(self.model.state_dict(), model_path)
             else:
-                if self.cv['val'].best_model != None:
-                    self.print(f'[save][best: {best}] Saving [{self.cv["val"].best_model}] -> [{model_path}]')
-                    shutil.copy(self.cv["val"].best_model, model_path)
+                if self.validation['val'].best_model != None:
+                    self.print(f'[save][best: {best}] Saving [{self.validation["val"].best_model}] -> [{model_path}]')
+                    shutil.copy(self.validation["val"].best_model, model_path)
                 else:
-                    self.print(f'[save][best: {best}] no best_model in self.cv["val"], Saving current model -> [{model_path}]')
+                    self.print(f'[save][best: {best}] no best_model in self.validation["val"], Saving current model -> [{model_path}]')
                     torch.save(self.model.state_dict(), model_path)
         else:
             self.print(f'[save][best: {best}] Saving model to: {model_path}')

@@ -1,3 +1,4 @@
+from copy import deepcopy as dcopy
 import logging
 
 import numpy as np
@@ -58,7 +59,7 @@ def reproducible_worker_dict():
 test_type_list = [None, 'categorical', 'multihead_classification', 'autoencode']
 def test(node, dataset, batch_size=64, test_type=None, test_f=None, result_dict=None, num_workers=0, amp=False):
     '''
-    
+
     '''
     # Safety check
     if test_f is not None and result_dict is not None:
