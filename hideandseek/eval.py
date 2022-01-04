@@ -64,7 +64,7 @@ def test(node, dataset, batch_size=64, test_type=None, test_f=None, result_dict=
     # Safety check
     if test_f is not None and result_dict is not None:
         assert callable(test_f) and issubclass(result_dict, dict), f'test_f must be callable and result_dict must be dict-like'
-    elif test_f is None and result_dict is None::
+    elif test_f is None and result_dict is None:
         assert test_type in test_type_list, f'test_type must be one of {test_type_list}, received: {test_type}'
         test_f = get_test_f(test_type)
         result_dict = get_result_dict(test_type)
@@ -197,13 +197,13 @@ def accuracy_score(y_pred, y):
 
 # Classification score
 def sensitivity_score(y_true, y_pred):
-    (tn, fp), (fn, tp) = confusion_matrix(y_true, y_pred)
+    (tn, fp), (fn, tp) = metrics.confusion_matrix(y_true, y_pred)
     if (tp+fn)==0:
         warnings.warn('invalid value in sensitivity_score, setting to 0.0')
         return 0
     return tp / (tp+fn)
 def specificity_score(y_true, y_pred):
-    (tn, fp), (fn, tp) = confusion_matrix(y_true, y_pred)
+    (tn, fp), (fn, tp) = metrics.confusion_matrix(y_true, y_pred)
     if (tn+fp)==0:
         warnings.warn('invalid value in specificity_score, setting to 0.0')
         return 0
@@ -213,7 +213,7 @@ def classification_report_full(y_true, y_pred, discard_ovr=False):
     result = metrics.classification_report(y_true, y_pred, output_dict=True)
     result_ovr = {k:dcopy(v) for k, v in result.items() if k.isnumeric()}
     result_all = {k:dcopy(v) for k, v in result.items() if not k.isnumeric()}
-    more_scorers = {'sensitivity': sensitivity_score, 'specificity': specificity_score}
+    more_scorers = {'sensitivity': sensitivity_score, 'specificity': specificity_score, 'accuracy': metrics.accuracy_score} # Optimize to reduce redundant computations?
     # Additional metrics
     for c in result_ovr.keys():
         c_int = int(c)
