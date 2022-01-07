@@ -16,6 +16,7 @@ import tools.torch
 import tools.modules
 
 from . import validation as V
+from . import utils as U
 
 __all__ = [
 'Node'
@@ -161,8 +162,8 @@ class Node:
     def generate_loader(self):
         if self.dataset is not None:
             # To avoid batch normalization layers from raising exceptions
-            self.loader = D.DataLoader(self.dataset, batch_size=self.cfg_train['batch_size'], shuffle=True, drop_last=True) if len(self.dataset) % self.cfg_train['batch_size'] == 1 \
-                    else D.DataLoader(self.dataset, batch_size=self.cfg_train['batch_size'], shuffle=True, drop_last=False)
+            self.loader = D.DataLoader(self.dataset, batch_size=self.cfg_train['batch_size'], shuffle=True, drop_last=True, **U.reproducible_worker_dict()) if len(self.dataset) % self.cfg_train['batch_size'] == 1 \
+                    else D.DataLoader(self.dataset, batch_size=self.cfg_train['batch_size'], shuffle=True, drop_last=False, **U.reproducible_worker_dict())
         else:
             log.warning('No dataset found. Skipping generate_loader()')
 

@@ -47,3 +47,16 @@ def exp_setting(cfg, path=None):
     T.random.seed(cfg.random.seed, strict=cfg.random.strict)
     path = exp_path(path)
     return device, path
+
+def reproducible_worker_dict():
+    '''Generate separate random number generators for workers,
+    so that the global random state is not consumed,
+    thereby ensuring reproducibility'''
+    def seed_worker(worker_id):
+        worker_seed = torch.initial_seed() % 2**32
+        numpy.random.seed(worker_seed)
+        random.seed(worker_seed)
+
+    g = torch.Generator()
+    g.manual_seed(0)
+    return {'worker_init_fn': seed_worker, 'generator': g}
