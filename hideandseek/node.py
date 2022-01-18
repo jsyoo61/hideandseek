@@ -128,7 +128,8 @@ class Node:
         '''
         Trains the model with the specified duration.
         '''
-        if T is None: # When no tools is
+        if T is None: # When no T is specified
+            assert 'epoch' in self.cfg_train, 'key "epoch" must be provided in cfg_train when argument "T" is not specified.'
             T = self.cfg_train['epoch']
 
         self.print(f'[Node: {self.name}][step: {T} ({horizon})]')

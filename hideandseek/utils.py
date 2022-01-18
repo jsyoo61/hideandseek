@@ -1,12 +1,19 @@
 import os
 import logging
 
+import torch
+
 import tools as T
 import tools.torch
 from omegaconf import OmegaConf as OC
 
 log = logging.getLogger(__name__)
 
+# %%
+'''
+Should eliminate the following two.
+Too inconsistent
+'''
 def exp_path(path=None, makedirs=True):
     path = '.' if path is None else path
     exp_path = T.Path(path)
@@ -17,7 +24,6 @@ def exp_path(path=None, makedirs=True):
         exp_path.makedirs()
     return exp_path
 
-# %%
 def exp_setting(cfg, path=None):
     '''
     cfg must have the following structure:
@@ -47,6 +53,43 @@ def exp_setting(cfg, path=None):
     T.random.seed(cfg.random.seed, strict=cfg.random.strict)
     path = exp_path(path)
     return device, path
+
+# %%
+class Dataset(torch.utils.data.Dataset):
+    '''
+    inherit this class and update: __init__,
+    '''
+    def __iter__(self):
+        self._i = 0
+        return self
+
+    def __next__(self):
+        if self._i < len(self):
+            data = self[self._i]
+            self._i +=1
+            return data
+        else:
+            raise StopIteration
+
+    def __getitem__(self, idx):
+        x, y = self.get_x(idx), self.get_y(idx)
+
+        return {'x': x, 'y': y}
+
+    # def __len__(self):
+    #     return len(self.y)
+
+    def get_x(self, idx):
+        # Should return x
+        pass
+    def get_y(self, idx):
+        # Should return y
+        pass
+
+    def get_y_all(self):
+        # Optional for fast computation when getting loss weights. return all y
+        pass
+
 
 def reproducible_worker_dict():
     '''Generate separate random number generators for workers,

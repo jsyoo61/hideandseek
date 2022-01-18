@@ -1,5 +1,6 @@
 from copy import deepcopy as dcopy
 import logging
+import multiprocessing
 
 import numpy as np
 import sklearn.metrics as metrics
@@ -7,6 +8,7 @@ import torch
 
 import tools as T
 import tools.torch
+import tools.numpy
 import torch.utils.data as D
 
 # %%
@@ -196,12 +198,16 @@ def accuracy_score(y_pred, y):
     return score
 
 # Classification score
-def sensitivity_score(y_true, y_pred):
-    (tn, fp), (fn, tp) = metrics.confusion_matrix(y_true, y_pred)
-    if (tp+fn)==0:
-        warnings.warn('invalid value in sensitivity_score, setting to 0.0')
-        return 0
-    return tp / (tp+fn)
+# Binary classification
+def sensitivity_score(y_true, y_pred, **kwargs):
+    '''sensitivity == recall == tpr'''
+    return metrics.recall_score(y_true, y_pred, **kwargs)
+    # (tn, fp), (fn, tp) = metrics.confusion_matrix(y_true, y_pred)
+    # if (tp+fn)==0:
+    #     warnings.warn('invalid value in sensitivity_score, setting to 0.0')
+    #     return 0
+    # return tp / (tp+fn)
+
 def specificity_score(y_true, y_pred):
     (tn, fp), (fn, tp) = metrics.confusion_matrix(y_true, y_pred)
     if (tn+fp)==0:
@@ -209,6 +215,36 @@ def specificity_score(y_true, y_pred):
         return 0
     return tn / (tn+fp)
 
+def _pr_score(y_true, y_score, threshold):
+    y_pred = T.numpy.binarize(y_score, threshold)
+    pr = metrics.precision_score(y_true, y_pred)
+    rec = metrics.recall_score(y_true, y_pred)
+    return pr, rec
+
+def precision_recall_curve_all(y_true, y_score, num_workers=None):
+    '''
+    compute precision-recall curve for all threshold.
+    Because sklearn.metrics.precision_recall_curve does not return full set of thresholds
+    sklearn drops the results after when recall hits 1.
+
+    -> is this function really necessary?
+    '''
+    thresholds = np.sort(np.unique(y_score)) # increasing threshold
+    thresholds = np.append(thresholds,1) # Since tnp.binarize binarizes with y_pred[y_score>=threshold] == 1
+    if num_workers==0:
+        prs, recs = [], []
+        for t in thresholds:
+            y_pred = T.numpy.binarize(y_score, threshold)
+            prs.append(metrics.precision_score(y_true, y_pred))
+            recs.append(metrics.recall_score(y_true, y_pred))
+    elif num_workers is None or T.isint(num_workers):
+        with multiprocessing.Pool() as p:
+            l_pr = p.starmap(pr_score, zip(it.repeat(y_true, len(thresholds)), it.repeat(y_score, len(thresholds)), thresholds))
+
+
+    return prs, recs, thresholds
+
+# Multiclass classification
 def classification_report_full(y_true, y_pred, discard_ovr=False):
     result = metrics.classification_report(y_true, y_pred, output_dict=True)
     result_ovr = {k:dcopy(v) for k, v in result.items() if k.isnumeric()}

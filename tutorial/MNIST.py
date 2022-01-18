@@ -53,7 +53,8 @@ node = hs.N.Node(**kwargs)
 # %%
 # train
 node.model.to(device)
-node.step(cfg.train.epoch)
+node.step()
+node.step(T=10)
 node.model.cpu()
 
 # %%
