@@ -55,6 +55,15 @@ def exp_setting(cfg, path=None):
     return device, path
 
 # %%
+def extract_dataset(dataset):
+    if hasattr(dataset, 'get_x_all'):
+        x = dataset.get_x_all()
+    
+
+    return {'x': x, 'y': y}
+
+
+# %%
 class Dataset(torch.utils.data.Dataset):
     '''
     inherit this class and update: __init__,
@@ -90,6 +99,22 @@ class Dataset(torch.utils.data.Dataset):
         # Optional for fast computation when getting loss weights. return all y
         pass
 
+class SimpleDataset(torch.utils.data.Dataset):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def get_x(self, idx):
+        return torch.as_tensor(self.x[idx])
+
+    def get_y(self, idx):
+        return torch.as_tensor(self.y[idx])
+
+    def get_y_all(self):
+        return torch.as_tensor(self.y)
+
+    def __len__(self):
+        return len(self.y)
 
 def reproducible_worker_dict():
     '''Generate separate random number generators for workers,

@@ -1,7 +1,11 @@
+'''
+might be deprecated. Think this whole validation (testing) can be integrated into eval.py
+'''
 from collections import deque
 import logging
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,6 +13,7 @@ import torch.nn.functional as F
 
 from . import eval as E
 import tools as T
+import tools.modules
 
 # %%
 log = logging.getLogger(__name__)
@@ -18,44 +23,126 @@ def isbetter(score_best: float, score: float, increase_better: bool):
     return (not increase_better and score<score_best) or (increase_better and score>score_best)
 
 # %%
+'''
+Validation object specifies a single dataset.
+scorer is tied to each validation object.
+
+
+'''
+
 class Validation:
-    def __init__(self, dataset, scorer, test_batch_size=64):
+    def __init__(self, dataset, d_scorer, batch_size=64):
         '''
         :param dataset: torch.utils.data.Dataset object or list of torch.utils.data.Dataset objects
-        :param scorer: single or dict of scorer functions which take (y_hat, y) and returns a single score
+        :param d_scorer: dict of hideandseek scorer functions which take result(dict) and returns a single score
+            # TODO: May support returning multiple scores for optimization
         '''
         self.dataset = dataset
-        self.scorer = scorer
+        self.d_scorer = d_scorer
+        self.batch_size = batch_size
 
-    def step(self, node, name=None):
-        y_list, y_hat_list = [], []
+        self.history = {score_type: T.modules.ValueTracker() for score_type in self.d_scorer.keys()}
+
+        self.reset()
+
+    def step(self, node):
         amp = node.amp
 
+        ld_results = []
         # If dataset is a list
         if type(self.dataset) == list:
             for dataset_ in self.dataset:
-                results = E.test(node, dataset_, test_batch_size=self.test_batch_size, amp=amp)
-                y_list.append(results['y'])
-                y_hat_list.append(results['y_hat'])
-
+                d_results = E.test_node(node, dataset_, batch_size=self.batch_size, amp=amp)
+                ld_results.append(d_results)
+            d_results_merged = T.merge_dict(ld_results)
+            results = {key: np.concatenate(results, axis=0) for key, results in d_results_merged}
         # Single dataset
         else:
-            results = E.test(node, self.dataset, test_batch_size=self.test_batch_size, amp=amp)
-            y_list.append(results['y'])
-            y_hat_list.append(results['y_hat'])
+            results = E.test_node(node, self.dataset, batch_size=self.batch_size, amp=amp)
 
-        y, y_hat = np.concatenate(y_list, axis=0), np.concatenate(y_hat_list, axis=0)
-
-        # Getting scores
-        if type(self.scorer)==dict:
-            score = {score_type: score(y_hat, y) for score_type, score in self.scorer.items()}
-        else:
-            score = self.scorer(y_hat, y)
+        # Compute scores using hideandseek eval functions which receives results (dictionary)
+        score = {score_type: scorer(results) for score_type, scorer in self.d_scorer.items()}
+        for score_type, valuetracker in self.history.items():
+            valuetracker.step(node.iter, score[score_type])
 
         return score
 
+    def plot(self, ax=None, square=False):
+        '''
+        plot validation history
+        '''
+        if ax is None:
+            if square:
+                nrowcol = int(np.ceil(np.sqrt(len(self.d_scorer))))
+                fig, ax = plt.subplots(nrows=nrowcol, ncols=nrowcol)
+            else:
+                fig, ax = plt.subplots(ncols=len(self.d_scorer))
+            ax = ax.flatten()
+        for (score_type, valuetracker), ax_ in zip(self.history.items(), ax):
+            valuetracker.plot(ax=ax_)
+            ax_.set_title(score_type)
+        return ax
+
     def reset(self):
         pass
+
+class EarlyStopper():
+    def __repr__(self):
+        return f'<EarlyStopper>\npatience: {self.patience}\nincrease_better: {self.increase_better}'
+
+    def __init__(self, increase_better, patience, primary_score=None, target_validation='default', discard_best=True):
+        self.increase_better = increase_better
+        self.patience = patience
+        self.primary_score = primary_score
+        self.target_validation = target_validation
+        self.discard_best = discard_best
+
+        self.history = T.modules.ValueTracker() # For now, only track single score
+        self.reset()
+
+    def step(self, node, score_summary, path):
+        '''
+        score_summary: 2-level nested dictionary of scores.
+            1st-level keys are validation object names,
+            2nd-level keys are score names
+        '''
+        score_target_validation = score_summary[self.target_validation]
+        if self.primary_score is None:
+            assert len(score_target_validation)==1, f"primary_score must be specified when there's more than 1 scorer functions, received: {len(score_target_validation)}"
+            score = list(score_target_validation.values())[0]
+            # assert type(score) is not dict, 'when primary_score is not given, the given score must be a scalar'
+        else:
+            score = score_target_validation[self.primary_score]
+        self.history.step(node.iter, score)
+
+        # Save best model
+        if isbetter(score_best=self.best_score, score=score, increase_better=self.increase_better):
+            log.info(f'[EarlyStopping]New best score: {self.best_score} -> {score}')
+            log.info(f'[EarlyStopping]Saved model: {path}')
+            torch.save(node.model.state_dict(), path)
+            if self.discard_best and self.best_model!=None:
+                os.remove(self.best_model)
+
+            self.best_score = score
+            self.best_model=path
+
+            # Clear patience tracking
+            self.history.reset()
+
+        # patience_end == True when best model did not appear for self.patience times
+        patience_end = self.patience == len(self.history)
+        log.info(f'[EarlyStopping][patience: {len(self.history)}/{self.patience}]')
+
+        return patience_end
+
+    def reset(self):
+        # log.info('[EarlyStopper] Resetting...')
+        self.history.reset()
+        self.best_model = None
+        if self.increase_better:
+            self.best_score = -float('inf')
+        else:
+            self.best_score = float('inf')
 
 class EarlyStopping(Validation):
     def __init__(self, dataset, scorer, primary_score=None, increase_better=False, discard_best=True, patience=None):
@@ -120,8 +207,12 @@ class EarlyStopping(Validation):
 # %%
 class VDict(dict):
     def reset(self):
-        for cv in self.values():
-            cv.reset()
+        for v in self.values():
+            v.reset()
+
+    def plot(self):
+        for v in self.values():
+            v.plot()
 
 def track_score(score_tracker_dict, score_dict, x=None, label=None):
     '''
