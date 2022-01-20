@@ -210,9 +210,20 @@ class VDict(dict):
         for v in self.values():
             v.reset()
 
-    def plot(self):
-        for v in self.values():
-            v.plot()
+    def plot(self, axes, savepath='.'):
+        """
+        Plot per score.
+        Each axis corresponds to one scorer.
+        In each axis, multiple lines correspond to multiple validation objects (datasets).
+        """
+        # Plot validation
+        for score_type, ax in zip(d_scorer.keys(), axes.flatten()):
+            P.plot_values([v.history[score_type] for v in self.values()], ax=ax)
+            legend = [score_type+suffix for score_type, suffix in it.product(self.keys(), ['','_smoothed'])]
+            ax.set_title(score_type)
+            ax.legend(legend)
+        fig.savefig(os.path.join(savepath,'validation.png'))
+        return ax
 
 def track_score(score_tracker_dict, score_dict, x=None, label=None):
     '''

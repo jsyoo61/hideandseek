@@ -1,4 +1,4 @@
 
-PATH:
-  PROJECT: /home/jaesungyoo/programming/hideandseek/tutorial
-  DATA: ${PATH.PROJECT}/data
+path:
+  project: /home/jaesungyoo/programming/hideandseek/tutorial
+  data: ${path.project}/data

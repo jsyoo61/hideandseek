@@ -5,4 +5,4 @@ defaults:
 data:
   dataset:
     _target_: dataset.MNIST
-    root: ${PATH.DATA}
+    root: ${path.data}

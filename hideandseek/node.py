@@ -17,6 +17,7 @@ import tools.modules
 
 from . import validation as V
 from . import utils as U
+from . import plot as P
 
 __all__ = [
 'Node'

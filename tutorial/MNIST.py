@@ -40,6 +40,7 @@ path = {'model': 'exp/model', 'node': 'exp/node'}
 # Settings for training
 data = hydra.utils.instantiate(cfg.data.dataset)
 train_dataset, test_dataset = data['dataset']['train'], data['dataset']['test']
+log.info(data.keys())
 
 criterion = hydra.utils.instantiate(cfg.train.loss, dataset=train_dataset)
 
@@ -53,8 +54,9 @@ node = hs.N.Node(**kwargs)
 # %%
 # train
 node.model.to(device)
-node.step()
-node.step(T=10)
+node.train() # train for specified epoch in cfg_train
+node.train(epoch=2) # train for explicit number of epochs
+node.train(step=10) # train for explicit number of updates
 node.model.cpu()
 
 # %%
@@ -65,4 +67,7 @@ node.load()
 # %%
 # Evaluation
 node.model.to(device)
-hs.E.test(node, test_dataset)
+results = hs.E.test(node, test_dataset, test_batch_size=256)
+log.info(result.keys())
+
+score = hs.E.classification_score(results)

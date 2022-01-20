@@ -3,4 +3,4 @@
 data:
   dataset:
     _target_: dataset.CIFAR10
-    root: ${PATH.DATA}
+    root: ${path.data}

@@ -1,11 +1,11 @@
 import os
 import logging
 
+from omegaconf import OmegaConf
 import torch
 
 import tools as T
 import tools.torch
-from omegaconf import OmegaConf as OC
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def exp_setting(cfg, path=None):
     # TODO: elastic adjustment of cfg.random
 
     # Print current experiment info
-    log.info(OC.to_yaml(cfg))
+    log.info(OmegaConf.to_yaml(cfg))
     log.info(os.getcwd())
 
     # Set GPU for current experiment
@@ -55,13 +55,23 @@ def exp_setting(cfg, path=None):
     return device, path
 
 # %%
+def model_type(model):
+    '''
+    Return library type of the given model.
+    '''
+    if issubclass(type(model), sklearn.BaseEstimator):
+        return 'sklearn'
+    elif issubclass(type(model), torch.nn.Module):
+        return 'torch'
+    else:
+        return 'unknown'
+
 def extract_dataset(dataset):
     if hasattr(dataset, 'get_x_all'):
         x = dataset.get_x_all()
-    
+
 
     return {'x': x, 'y': y}
-
 
 # %%
 class Dataset(torch.utils.data.Dataset):

@@ -210,6 +210,8 @@ Example
 result = {'y_true': y_true, 'y_pred': y_pred}
 classification_score(result)
 
+scores = {'scorer type': score, ...}
+
 
 # order of arguments follow sklearn convention: y_true, y_hat/pred
 
@@ -246,14 +248,9 @@ def accuracy_score(result):
 def sensitivity_score(result): # alias
     '''sensitivity == recall == tpr'''
     return metrics.recall_score(result['y_true'], result['y_pred'])
-    # (tn, fp), (fn, tp) = metrics.confusion_matrix(result['y_true'], y_pred)
-    # if (tp+fn)==0:
-    #     warnings.warn('invalid value in sensitivity_score, setting to 0.0')
-    #     return 0
-    # return tp / (tp+fn)
 
 def specificity_score(result):
-    (tn, fp), (fn, tp) = metrics.confusion_matrix(result['y_true'], y_pred)
+    (tn, fp), (fn, tp) = metrics.confusion_matrix(result['y_true'], result['y_pred'])
     if (tn+fp)==0:
         warnings.warn('invalid value in specificity_score, setting to 0.0')
         return 0
@@ -265,27 +262,27 @@ def classification_report_full(result, discard_ovr=False):
     Adds additional metrics to sklearn.classification_report
     '''
     y_true, y_pred = result['y_true'], result['y_pred']
-    result = metrics.classification_report(y_true, y_pred, output_dict=True)
-    result_ovr = {k:dcopy(v) for k, v in result.items() if k.isnumeric()}
-    result_all = {k:dcopy(v) for k, v in result.items() if not k.isnumeric()}
-    more_scorers = {'sensitivity': sensitivity_score, 'specificity': specificity_score, 'accuracy': metrics.accuracy_score} # Optimize to reduce redundant computations?
+    scores = metrics.classification_report(y_true, y_pred, output_dict=True)
+    scores_ovr = {k:dcopy(v) for k, v in scores.items() if k.isnumeric()}
+    scores_all = {k:dcopy(v) for k, v in scores.items() if not k.isnumeric()}
+    more_scorers = {'sensitivity': sensitivity_score, 'specificity': specificity_score, 'accuracy': accuracy_score} # Optimize to reduce redundant computations?
     # Additional metrics
-    for c in result_ovr.keys():
+    for c in scores_ovr.keys():
         c_int = int(c)
-        y_true_, y_pred_ = y_true==c_int, y_pred==c_int
+        y_true__c, y_pred_c = y_true==c_int, y_pred==c_int
         for scorer_name, scorer in more_scorers.items():
-            result_ovr[c][scorer_name] = scorer(y_true_, y_pred_)
+            scores_ovr[c][scorer_name] = scorer({'y_true': y_true__c, 'y_pred': y_pred_c})
 
     # summary
     for scorer_name, scorer in more_scorers.items():
-        result_all['macro avg'][scorer_name] = np.mean([result_ovr_[scorer_name] for result_ovr_ in result_ovr.values()])
-        result_all['weighted avg'][scorer_name] = np.sum([result_ovr_[scorer_name]*result_ovr_['support'] for result_ovr_ in result_ovr.values()]) / result_all['weighted avg']['support']
+        scores_all['macro avg'][scorer_name] = np.mean([scores_ovr_[scorer_name] for scores_ovr_ in scores_ovr.values()])
+        scores_all['weighted avg'][scorer_name] = np.sum([scores_ovr_[scorer_name]*scores_ovr_['support'] for scores_ovr_ in scores_ovr.values()]) / scores_all['weighted avg']['support']
 
     if discard_ovr:
-        return result_all
+        return scores_all
     else:
-        result_ovr.update(result_all)
-        return result_ovr
+        scores_ovr.update(scores_all)
+        return scores_ovr
 
 # Multihead classification score
 def multihead_accuracy_score(y_pred, y):
@@ -306,28 +303,6 @@ def multihead_accuracy_score_score(y_score, y):
     assert y_score.ndim==3 and y.ndim==2
     y_pred = y_score.argmax(axis=-1)
     return multihead_accuracy_score(y_pred, y)
-
-# Wrapper function for hydra.utils.instantiate
-class Score_wrapper:
-    '''
-    wraps around scorers to:
-    1. instantiate an object using hydra.utils.instantiate()
-    2. adjust scorer functions such that raw input can be delivered to scorer functions (y_pred or y_score can be delivered to any type of scorers)
-    '''
-    f_dict = {
-    # regression
-    'l1_score': l1_score,
-    'mse_score': mse_score,
-    'r2_score': r2_score,
-
-    # multihead classification
-    'multihead_accuracy_score': multihead_accuracy_score_score,
-    }
-    def __init__(self, func):
-        self.func = self.f_dict[func]
-
-    def __call__(self, y_hat, y):
-        return self.func(y_hat, y)
 
 # %%
 # All scores for each task type
@@ -390,6 +365,28 @@ def multihead_classification_score(result):
     }
     return scores
 
+
+# Wrapper function for hydra.utils.instantiate
+class Score_wrapper:
+    '''
+    wraps around scorers to:
+    1. instantiate an object using hydra.utils.instantiate()
+    2. adjust scorer functions such that raw input can be delivered to scorer functions (y_pred or y_score can be delivered to any type of scorers)
+    '''
+    f_dict = {
+    # regression
+    'l1_score': l1_score,
+    'mse_score': mse_score,
+    'r2_score': r2_score,
+
+    # multihead classification
+    'multihead_accuracy_score': multihead_accuracy_score_score,
+    }
+    def __init__(self, func):
+        self.func = self.f_dict[func]
+
+    def __call__(self, y_hat, y):
+        return self.func(y_hat, y)
 # %%
 '''
 May be deprecated
