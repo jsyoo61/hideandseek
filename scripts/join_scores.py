@@ -80,6 +80,8 @@ def join_result(subdir, exp_dict={}):
 args.savename = args.savename if args.savename is not None else os.path.splitext(os.path.basename(args.result))[0]
 
 result_list = []
+# Retrieve directories to analyze
 walk(args.exp_dir, exp_dict={'exp':os.path.basename(args.exp_dir)})
+# Load all scores 
 result_table = pd.DataFrame(result_list)
 result_table.to_excel(os.path.join(args.exp_dir, f'{args.savename}.xlsx'), index=False)

@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 # %%
 class Node:
     '''Local Node for training'''
-    def __init__(self, model, dataset, cfg_train, criterion, model_dir=None, node_dir=None, validation=None, earlystopper=None, name='default', verbose=True, amp=False):
+    def __init__(self, model, dataset=None, cfg_train={}, criterion=None, model_dir=None, node_dir=None, validation=None, earlystopper=None, name='default', verbose=True, amp=False):
         '''
         :param model: torch.nn.Module object
         :param dataset: torch.utils.data.Dataset object
