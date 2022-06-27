@@ -261,17 +261,27 @@ def classification_report_full(result, discard_ovr=False):
     '''
     Adds additional metrics to sklearn.classification_report
     '''
+    # TODO: add y_score
+    y_score = result['y_score'] if 'y_score' in result else None
+
     y_true, y_pred = result['y_true'], result['y_pred']
     scores = metrics.classification_report(y_true, y_pred, output_dict=True)
     scores_ovr = {k:dcopy(v) for k, v in scores.items() if k.isnumeric()}
     scores_all = {k:dcopy(v) for k, v in scores.items() if not k.isnumeric()}
     more_scorers = {'sensitivity': sensitivity_score, 'specificity': specificity_score, 'accuracy': accuracy_score} # Optimize to reduce redundant computations?
+
     # Additional metrics
     for c in scores_ovr.keys():
         c_int = int(c)
         y_true__c, y_pred_c = y_true==c_int, y_pred==c_int
         for scorer_name, scorer in more_scorers.items():
             scores_ovr[c][scorer_name] = scorer({'y_true': y_true__c, 'y_pred': y_pred_c})
+
+    if y_score is not None:
+        for c in scores_ovr.keys():
+            c_int = int(c)
+            y_score_ = y_score[:, c_int]
+            metrics.roc_auc_score(y_true, y_score_)
 
     # summary
     for scorer_name, scorer in more_scorers.items():

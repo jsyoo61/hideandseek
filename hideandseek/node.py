@@ -161,8 +161,7 @@ class Node:
         else:
             log.warning('No dataset found. Skipping generate_loader()')
 
-    # def step(self, T=None, horizon='epoch', new_op=True, no_val=False):
-    def train(self, epoch=None, step=None, new_op=True, no_val=False):
+    def train(self, epoch=None, new_op=True, no_val=False, step=None):
         '''
         Trains the model with the specified duration.
         '''
@@ -170,12 +169,12 @@ class Node:
         if step is None:
             horizon = 'epoch'
             if epoch is None: # When neither epoch or step are specified
-                assert 'epoch' in self.cfg_train, 'key "epoch" must be provided in cfg_train when argument "T" is not specified.'
+                assert 'epoch' in self.cfg_train, 'key "epoch" must be provided in cfg_train when argument "epoch" is not specified.'
                 T = self.cfg_train['epoch']
             else:
                 T = epoch
         else:
-            assert epoch is None, f'only one of epoch or step can be specified. received epoch: {epoch}, step: {step}'
+            assert epoch is None, f'Either epoch or step must be specified. Received epoch: {epoch}, step: {step}'
             horizon = 'step'
             T = updates
         self.print(f'[Node: {self.name}][horizon: {horizon}][duration: {T}]')
@@ -204,6 +203,7 @@ class Node:
             # Weight decay optional
             self.op = optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'], weight_decay=self.cfg_train['weight_decay']) if 'weight_decay' in self.cfg_train \
                         else optim.Adam(self.model.parameters(), lr=self.cfg_train['lr'])
+            # self.op = optim.Adam(self.model.parameters(), **self.cfg_train)
 
         if horizon == 'epoch':
             self._step_epoch(T=T, no_val=no_val, device=device)
@@ -287,9 +287,11 @@ class Node:
             import pdb; pdb.set_trace()
 
     def forward(self, data, device):
-        '''
-        inherit Node and define new forward() function to build custom forward pass
-        '''
+        """
+        Forward pass. Receive data and return the loss function.
+        Inherit Node and define new forward() function to build custom forward pass.
+        """
+
         if type(data)==tuple:
             x, y = data
         elif type(data)==dict:

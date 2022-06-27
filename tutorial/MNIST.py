@@ -5,20 +5,28 @@ import hydra
 from omegaconf import OmegaConf, DictConfig
 
 import torch
+# import hideandseek as hs
+
+# %%
+import sys
+import os
+sys.path.append(os.path.dirname(os.getcwd()))
 import hideandseek as hs
+
+PROJECT_DIR=os.getcwd()
+
+
+import os
+os.getcwd()
+PROJECT_DIR='/home/jaesungyoo/programming/hideandseek/tutorial'
+os.chdir(PROJECT_DIR)
+os.listdir()
 
 # %%
 # to enable logging from hideandseek
 # When using command line interface, there's no need to set the log level (feature from hydra)
 log = logging.getLogger()
 log.setLevel(logging.INFO)
-
-# %%
-import os
-os.getcwd()
-PROJECT_DIR='/home/jaesungyoo/programming/hideandseek/tutorial'
-os.chdir(PROJECT_DIR)
-os.listdir()
 
 # %%
 hydra.core.global_hydra.GlobalHydra.instance().clear()
