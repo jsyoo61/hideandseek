@@ -1,4 +1,4 @@
-__version__ = "0.1.1.12"
+__version__ = "0.1.3"
 from . import eval as E
 from . import node as N
 from . import validation as V
