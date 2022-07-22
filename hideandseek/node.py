@@ -359,6 +359,8 @@ class Node:
             state_dict['misc.get_f'] = self.misc.get_f
         if hasattr(self, 'threshold'):
             state_dict['threshold'] = self.threshold
+        if self.validation is not None:
+            state_dict['validation.history'] = {name: validation.history for name, validation in self.validation.items()}
         return state_dict
 
     def load_state_dict(self, state_dict):
