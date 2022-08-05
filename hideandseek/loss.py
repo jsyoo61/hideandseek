@@ -6,7 +6,7 @@ import torch.nn as nn
 
 log = logging.getLogger(__name__)
 
-def weighted_crossentropyloss(dataset, classes=None):
+def weighted_crossentropy_loss(dataset, classes=None):
     """
     torch.nn.CrosEntropyLoss with class weights inferred from given dataset.
     Parameters

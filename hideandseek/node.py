@@ -62,7 +62,7 @@ class Node:
         self.criterion = criterion
         self.model_dir = model_dir
         self.node_dir = node_dir
-        self.validation = validation if issubclass(type(validation), dict) else V.VDict({'default': validation}) # wrap with VDict if single validation object is given.
+        self.validation = validation if issubclass(type(validation), dict) or validation is None else V.VDict({'default': validation}) # wrap with VDict if single validation object is given.
         self.earlystopper = earlystopper
         self.name = name
         self.verbose = verbose
@@ -161,7 +161,7 @@ class Node:
         else:
             log.warning('No dataset found. Skipping generate_loader()')
 
-    def train(self, epoch=None, new_op=True, no_val=False, step=None):
+    def train(self, epoch=None, new_op=True, no_val=False, step=None, reset_loss_tracker=False):
         '''
         Trains the model with the specified duration.
         '''
@@ -169,20 +169,20 @@ class Node:
         if step is None:
             horizon = 'epoch'
             if epoch is None: # When neither epoch or step are specified
-                assert 'epoch' in self.cfg_train, 'key "epoch" must be provided in cfg_train when argument "step" is not specified.'
-                T = self.cfg_train['epoch']
-            else:
-                T = epoch
+                assert 'epoch' in self.cfg_train, 'key "epoch" must be provided in cfg_train, or the argument "epoch" must be provided \
+                                                when argument "step" is not specified.'
+                epoch = self.cfg_train['epoch']
+            self.print(f'[Node: {self.name}] train for {epoch} epochs')
         else:
             assert epoch is None, f'Either epoch or step must be specified. Received epoch: {epoch}, step: {step}'
             horizon = 'step'
-            T = updates
-        self.print(f'[Node: {self.name}][horizon: {horizon}][duration: {T}]')
+            step = step
+            self.print(f'[Node: {self.name}] train for {step} steps')
 
         self.model.train()
         device = tools.torch.get_device(self.model)
         self.criterion = self.criterion.to(device)
-        self.loss_tracker.reset()
+        if reset_loss_tracker: self.loss_tracker.reset()
         self.generate_loader()
         '''
         There may be one or more loaders, but self.loader is the standard of synchronization
@@ -206,17 +206,16 @@ class Node:
             # self.op = optim.Adam(self.model.parameters(), **self.cfg_train)
 
         if horizon == 'epoch':
-            self._step_epoch(T=T, no_val=no_val, device=device)
+            self._step_epoch(T=epoch, no_val=no_val, device=device)
         elif horizon=='step':
-            self._step_step(T=T, no_val=no_val, device=device)
-        # else:
-        #     raise Exception(f'Invalid horizon type: {horizon}')
+            self._step_step(T=step, no_val=no_val, device=device)
 
+        # TODO: Return criterion back to its original device, meaning we have to store its previous device info
         self.criterion = self.criterion.cpu()
         return self.loss_tracker
 
     def _step_epoch(self, T, no_val=False, device=None):
-        device = device if device is not None else tools.torch.get_device(self.model)
+        self._device = device if device is not None else tools.torch.get_device(self.model)
 
         _iter = 0
         for epoch in range(1, T+1):
@@ -225,9 +224,9 @@ class Node:
             for batch_i, data in enumerate(self.loader, 1):
                 self.iter += 1
                 _iter += 1
-                loss = self.update(data, device)
-                self.print(f'[iter_sum: {self.iter}][Epoch: {epoch}/{T}][Batch: {batch_i}/{len(self.loader)}][Loss: {loss.item():.7f} (Avg: {self.train_meter.avg:.7f})]')
-                self.loss_tracker.step(self.iter, loss.item())
+                loss = self.update(data)
+                self.print(f'[iter_sum: {self.iter}][Epoch: {epoch}/{T}][Batch: {batch_i}/{len(self.loader)}][Loss: {loss:.7f} (Avg: {self.train_meter.avg:.7f})]')
+                self.loss_tracker.step(self.iter, loss)
 
                 # Validation
                 if (self.validation is not None) and (not no_val) and (_iter % self.cfg_train['cv_step']==0):
@@ -237,7 +236,7 @@ class Node:
                         return None # return None since double break is impossible in python
 
     def _step_step(self, T, no_val=False, device=None):
-        device = device if device is not None else tools.torch.get_device(self.model)
+        self._device = device if device is not None else tools.torch.get_device(self.model)
         if hasattr(self, '_loader_inst'): del self._loader_inst
 
         for _iter in range(1, T+1):
@@ -256,10 +255,10 @@ class Node:
                 self.n_batch = 1
 
             self.iter += 1
-            loss = self.update(data, device)
-            self.print(f'[iter_sum: {self.iter}][Iter: {_iter}/{T}][Batch: {self.n_batch}/{len(self.loader)}][Loss: {loss.item():.7f} (Avg: {self.train_meter.avg:.7f})]')
+            loss = self.update(data)
+            self.print(f'[iter_sum: {self.iter}][Iter: {_iter}/{T}][Batch: {self.n_batch}/{len(self.loader)}][Loss: {loss:.7f} (Avg: {self.train_meter.avg:.7f})]')
 
-            self.loss_tracker.step(self.iter, loss.item())
+            self.loss_tracker.step(self.iter, loss)
 
             # Validation
             if (self.validation is not None) and (not no_val) and (_iter % self.cfg_train['cv_step']==0):
@@ -269,51 +268,78 @@ class Node:
                     self.print('Patience met, stopping training')
                     return None # return None since double break is impossible in python
 
-    def update(self, data, device):
+    def update(self, data):
         '''
         This is where a lot of errors happen, so there's a pdb to save time.
         When there's error within a single update, use pdb to figure out the shape, device, tensor dtype, and more.
         '''
         try:
-            loss = self.forward(data, device)
+            if type(data)==tuple:
+                data = (x.to(self._device) for x in data)
+                N = len(data[0]) # number of data in batch
+            elif type(data)==dict:
+                data = {key: value.to(self._device) for key, value in data.items()}
+                N = len(next(iter(data)))
+                # x, y = data['x'].to(self._device), data['y'].to(self._device)
+            else:
+                raise Exception(f'return type from dataset undefined in hideandseek.N.Node: {type(data)}')
+
+            if self.amp:
+                # Mixed precision for acceleration
+                with torch.autocast(device_type=self._device.type):
+                    data_pred = self.forward(data)
+                    import pdb; pdb.set_trace()
+                    if type(data_pred)==dict:
+                        loss = self.criterion(**data_pred)
+                    else:
+                        loss = self.criterion(*data_pred)
+            else:
+                data_pred = self.forward(data)
+                if type(data_pred)==dict:
+                    loss = self.criterion(**data_pred)
+                else:
+                    loss = self.criterion(*data_pred)
 
             self.op.zero_grad()
             loss.backward()
             self.op.step()
+
+            loss = loss.item()
+            self.train_meter.step(loss, N)
             return loss
 
         except Exception as e:
             log.warning(e)
             import pdb; pdb.set_trace()
 
-    def forward(self, data, device):
+    def forward(self, data):
         """
         Forward pass. Receive data and return the loss function.
         Inherit Node and define new forward() function to build custom forward pass.
+
+        May return tuple or dictionary, whichever will be feeded to criterion.
         """
+        # Assumes the dataset returns a dictionary
+        x, y = data['x'], data['y']
 
-        if type(data)==tuple:
-            x, y = data
-        elif type(data)==dict:
-            x, y = data['x'].to(device), data['y'].to(device)
-        else:
-            raise Exception(f'return type from dataset undefined in hideandseek.N.Node: {type(data)}')
+        y_hat = self.model(x)
 
-        if self.amp:
-            # Mixed precision for acceleration
-            with torch.cuda.amp.autocast():
-                # TODO: Modularize this part so that custom forward pass is possible.
-                y_hat = self.model(x)
-                loss = self.criterion(y_hat, y)
-        else:
-            # TODO: Same as above
-            y_hat = self.model(x)
-            loss = self.criterion(y_hat, y)
+        return y_hat, y
 
-        N = len(y)
-        self.train_meter.step(loss.item(), N)
-
-        return loss
+        # loss = self.criterion(y_hat, y)
+        #
+        # if self.amp:
+        #     # Mixed precision for acceleration
+        #     with torch.cuda.amp.autocast():
+        #         # TODO: Modularize this part so that custom forward pass is possible.
+        #         y_hat = self.model(x)
+        #         loss = self.criterion(y_hat, y)
+        # else:
+        #     # TODO: Same as above
+        #     y_hat = self.model(x)
+        #     loss = self.criterion(y_hat, y)
+        #
+        # return loss
 
     def epoch_f(self):
         '''function to call every other epoch. May be used in subclass nodes'''

@@ -76,7 +76,7 @@ def extract_dataset(dataset):
 # %%
 class Dataset(torch.utils.data.Dataset):
     '''
-    inherit this class and update: __init__,
+    inherit this class and update: __init__, get_x, get_y
     '''
     def __iter__(self):
         self._i = 0
@@ -110,18 +110,33 @@ class Dataset(torch.utils.data.Dataset):
         pass
 
 class SimpleDataset(torch.utils.data.Dataset):
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
+    def __init__(self, x, y, convert_tensor=False):
+        """
+        Assume x, y are given in numpy arrays, although torch tensor might be compatible
+
+        Parameters
+        ----------
+        x: array-like
+        y: array-like
+        convert_tensor: bool, default=False
+            If True, convert and store x, y into torch tensors. This may require more memory.
+        """
+        self.x = torch.as_tensor(x, dtype=dtype) if convert_tensor else x
+        self.y = torch.as_tensor(y, dtype=dtype) if convert_tensor else y
+        self._convert_tensor = convert_tensor
+
+    def __getitem__(self, idx):
+        x, y = self.get_x(idx), self.get_y(idx)
+        return {'x': x, 'y': y}
 
     def get_x(self, idx):
-        return torch.as_tensor(self.x[idx])
+        return self.x[idx] if self._convert_tensor else torch.as_tensor(self.x[idx])
 
     def get_y(self, idx):
-        return torch.as_tensor(self.y[idx])
+        return self.y[idx] if self._convert_tensor else torch.as_tensor(self.y[idx])
 
     def get_y_all(self):
-        return torch.as_tensor(self.y)
+        return self.y if self._convert_tensor else torch.as_tensor(self.y)
 
     def __len__(self):
         return len(self.y)

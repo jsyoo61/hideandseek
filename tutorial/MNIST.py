@@ -5,22 +5,21 @@ import hydra
 from omegaconf import OmegaConf, DictConfig
 
 import torch
-# import hideandseek as hs
 
 # %%
 import sys
 import os
+print(os.getcwd())
 sys.path.append(os.path.dirname(os.getcwd()))
 import hideandseek as hs
 
-PROJECT_DIR=os.getcwd()
+PROJECT_DIR=os.path.join(os.getcwd())
 
-
-import os
-os.getcwd()
-PROJECT_DIR='/home/jaesungyoo/programming/hideandseek/tutorial'
-os.chdir(PROJECT_DIR)
-os.listdir()
+# import os
+# os.getcwd()
+# PROJECT_DIR='/home/jaesungyoo/programming/hideandseek/tutorial'
+# os.chdir(PROJECT_DIR)
+# os.listdir()
 
 # %%
 # to enable logging from hideandseek
@@ -34,7 +33,7 @@ hydra.initialize_config_dir(config_dir=os.path.join(PROJECT_DIR, 'conf'))
 overrides = [
 'data=MNIST',
 'model=Resnet',
-'train.batch_size=2048',
+'train.batch_size=128',
 'train.epoch=10',
 ]
 cfg = hydra.compose(config_name='train_cfg', overrides=overrides)
@@ -54,8 +53,8 @@ criterion = hydra.utils.instantiate(cfg.train.loss, dataset=train_dataset)
 
 model = hydra.utils.instantiate(cfg.model, info=data['info'])
 log.info(model)
-kwargs = {'model': model, 'dataset': train_dataset, 'cv': None, 'cfg_train': cfg.train,
-        'criterion': criterion, 'MODEL_DIR': path['model'], 'NODE_DIR': path['node'], 'verbose': True, 'amp': True}
+kwargs = {'model': model, 'dataset': train_dataset, 'validation': None, 'cfg_train': cfg.train,
+        'criterion': criterion, 'model_dir': path['model'], 'node_dir': path['node'], 'verbose': True, 'amp': False}
 
 node = hs.N.Node(**kwargs)
 
@@ -63,6 +62,8 @@ node = hs.N.Node(**kwargs)
 # train
 node.model.to(device)
 node.train() # train for specified epoch in cfg_train
+
+# %%
 node.train(epoch=2) # train for explicit number of epochs
 node.train(step=10) # train for explicit number of updates
 node.model.cpu()

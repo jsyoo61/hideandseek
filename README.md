@@ -1,5 +1,5 @@
 # hideandseek
-privacy preserving deep learning library.
+Highly modularized deep learning training library.
 
 Why use `hideandseek`?
 
@@ -10,7 +10,7 @@ Why use `hideandseek`?
 - Modularized machine learning pipeline allows using the same script for all types of experiments
 - The same training code can be run in privacy preserving setting by minimal modifications
 
-Currently integrating from experiment codes. (30.10.2021.)
+Currently prettifying codes. (30.10.2022.)
 
     import torch
     from omegaconf import OmegaConf
@@ -26,11 +26,12 @@ Currently integrating from experiment codes. (30.10.2021.)
       'cfg_train': cfg,
       'criterion': criterion,
     }
-    node = hs.Node(**kwargs)
+    node = hs.N.Node(**kwargs)
 
     node.model.to(device)
-    node.step(local_T=20, horizon='epoch') # trains for 20 epochs
-    # node.step(local_T=1000, horizon='step') # trains for 1000 steps
+    node.train() # trains for the amount of epochs defined in cfg_train
+    # node.train(local_T=20, horizon='epoch') # trains for 20 epochs
+    # node.train(local_T=1000, horizon='step') # trains for 1000 steps
     node.model.cpu()
 
     node.save()
@@ -38,7 +39,12 @@ Currently integrating from experiment codes. (30.10.2021.)
     test_results = hs.eval.test(node)
     scores = hs.eval.scores(test_results)
 
+and simply run multiple batch of experiments with a single line command such as:
+
+    python train.py -m lr=1e-3,1e-2 batch_size=32,64 "random_seed=range(0,5)" \
+    hydra/launcher=joblib hydra.launcher.n_jobs=8
+    # Runs total of 2*2*5=40 batch of experiments, with 8 processes at a time. Experiment results are stored in hydra.sweep.dir which can be overridden.
+
 To do
-- [ ] Migrate modules from experiment codes
 - [ ] Draw figures to explain hideandseek
 - [ ] GUI for generating experiment scripts when conducting variable sweeps

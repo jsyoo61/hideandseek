@@ -1,4 +1,5 @@
 
 path:
-  project: /home/jaesungyoo/programming/hideandseek/tutorial
+  # project: /home/jaesungyoo/programming/hideandseek/tutorial
+  project: /Users/jsyoo/Mirror/programming/PyPI/hideandseek/tutorial
   data: ${path.project}/data
