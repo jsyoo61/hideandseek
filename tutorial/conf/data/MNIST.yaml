@@ -1,8 +1,0 @@
-# @package _global_
-defaults:
-  - /loss: weighted_crossentropy_loss
-
-data:
-  dataset:
-    _target_: dataset.MNIST
-    root: ${path.data}

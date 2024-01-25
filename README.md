@@ -13,31 +13,41 @@ Why use `hideandseek`?
 Currently prettifying codes. (30.10.2022.)
 
     import torch
-    from omegaconf import OmegaConf
-    import hideandseek as hs
+    import torch.nn as nn
+
+    # Generate data
+    x = torch.rand(200,1)
+    y = 5*x+2
+
+    network = nn.Linear(1,1)
+    dataset = torch.utils.data.TensorDataset(x, y)
+    criterion = nn.MSELoss()
+    cfg = {
+    'lr': 1e-2,
+    'batch_size': 32,
+    'epoch': 10 # optional
+    }
+
+    # Training configuration. All you need to train a neural network
+    kwargs = {
+    'network':network,
+    'dataset':dataset,
+    'cfg_train':cfg,
+    'criterion':criterion,
+    'name': 'Test' # optional
+    }
+    trainer = hs.N.Node(**kwargs)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    cfg = OmegaConf.load('config.yaml') # omegaconf.OmegaConf.DictConfig object
-    model = DNN() # torch.nn.Module object
-    train_dataset = dataset # torch.utils.data.Dataset object
-    kwargs = {
-      'model': model,
-      'dataset': train_dataset,
-      'cfg_train': cfg,
-      'criterion': criterion,
-    }
-    node = hs.N.Node(**kwargs)
+    trainer.network.to(device)
 
-    node.model.to(device)
-    node.train() # trains for the amount of epochs defined in cfg_train
-    # node.train(local_T=20, horizon='epoch') # trains for 20 epochs
-    # node.train(local_T=1000, horizon='step') # trains for 1000 steps
-    node.model.cpu()
+    # Train for predefined number of epochs
+    trainer.train() # Train for predefined number of epochs
+    trainer.train(5) # Train for specified number of epochs
+    trainer.train(epoch=5) # Same thing with trainer.train(5)
+    trainer.train(step=500) # Train for specified number of updates
 
-    node.save()
-
-    test_results = hs.eval.test(node)
-    scores = hs.eval.scores(test_results)
+    trainer.network.cpu()
 
 and simply run multiple batch of experiments with a single line command such as:
 

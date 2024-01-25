@@ -10,7 +10,7 @@ setuptools.setup(
     name="hideandseek", # Replace with your own username
     version=__version__,
     author="JaeSung Yoo",
-    author_email="jsyoo61@korea.ac.kr",
+    author_email="jsyoo61@unc.edu",
     description="library for deep learning and privacy preserving deep learning",
     long_description=long_description,
     long_description_content_type="text/markdown",

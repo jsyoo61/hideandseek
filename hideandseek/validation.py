@@ -26,8 +26,6 @@ def isbetter(score_best: float, score: float, increase_better: bool):
 '''
 Validation object specifies a single dataset.
 scorer is tied to each validation object.
-
-
 '''
 
 class Validation:
@@ -85,46 +83,54 @@ class Validation:
 
     def reset(self):
         pass
-
 class EarlyStopper():
+    """
+    Returns True if the metric has stopped improving for the given number of patience steps.
+    Saves model in the given path and remembers which model is the best.
+
+    Parameters
+    ----------
+    arg : array-like of shape (n_samples,), default=None
+        Argument explanation.
+        If ``None`` is given, those that appear at least once
+        .. versionadded:: 0.18
+    
+    Functions
+    -------
+    step()
+        returns True/False
+    """
+
     def __repr__(self):
         return f'<EarlyStopper>\npatience: {self.patience}\nincrease_better: {self.increase_better}'
 
-    def __init__(self, increase_better, patience, primary_score=None, target_validation='default', discard_best=True):
+    def __init__(self, increase_better, patience, save_dir='network_temp', discard_best=True):
         self.increase_better = increase_better
         self.patience = patience
-        self.primary_score = primary_score
-        self.target_validation = target_validation
+        self.save_dir = save_dir
         self.discard_best = discard_best
 
-        self.history = T.modules.ValueTracker() # For now, only track single score
+        os.makedirs(self.save_dir, exist_ok=True)
+        self.history = tools.modules.ValueTracker() # For now, only track single score
         self.reset()
 
-    def step(self, node, score_summary, path):
-        '''
-        score_summary: 2-level nested dictionary of scores.
-            1st-level keys are validation object names,
-            2nd-level keys are score names
-        '''
-        score_target_validation = score_summary[self.target_validation]
-        if self.primary_score is None:
-            assert len(score_target_validation)==1, f"primary_score must be specified when there's more than 1 scorer functions, received: {len(score_target_validation)}"
-            score = list(score_target_validation.values())[0]
-            # assert type(score) is not dict, 'when primary_score is not given, the given score must be a scalar'
-        else:
-            score = score_target_validation[self.primary_score]
-        self.history.step(node.iter, score)
+    def step(self, trainer, score, filename=None):
+        filename = f'network_{trainer.iter}.pt' if filename is None else filename
+
+        self.history.step(trainer.iter, score)
 
         # Save best model
         if isbetter(score_best=self.best_score, score=score, increase_better=self.increase_better):
-            log.info(f'[EarlyStopping]New best score: {self.best_score} -> {score}')
-            log.info(f'[EarlyStopping]Saved model: {path}')
-            torch.save(node.model.state_dict(), path)
+            path = os.path.join(self.save_dir, filename)
+
+            log.info(f'[EarlyStopping] New best score: {self.best_score} -> {score}')
+            log.info(f'[EarlyStopping] Saved model: {path}')
+            torch.save(trainer.model.state_dict(), path)
             if self.discard_best and self.best_model!=None:
                 os.remove(self.best_model)
 
             self.best_score = score
-            self.best_model=path
+            self.best_model = path
 
             # Clear patience tracking
             self.history.reset()
@@ -143,6 +149,65 @@ class EarlyStopper():
             self.best_score = -float('inf')
         else:
             self.best_score = float('inf')
+
+# class EarlyStopper():
+#     def __repr__(self):
+#         return f'<EarlyStopper>\npatience: {self.patience}\nincrease_better: {self.increase_better}'
+
+#     def __init__(self, increase_better, patience, primary_score=None, target_validation='default', discard_best=True):
+#         self.increase_better = increase_better
+#         self.patience = patience
+#         self.primary_score = primary_score
+#         self.target_validation = target_validation
+#         self.discard_best = discard_best
+
+
+#         self.history = T.modules.ValueTracker() # For now, only track single score
+#         self.reset()
+
+#     def step(self, node, score_summary, path):
+#         '''
+#         score_summary: 2-level nested dictionary of scores.
+#             1st-level keys are validation object names,
+#             2nd-level keys are score names
+#         '''
+#         score_target_validation = score_summary[self.target_validation]
+#         if self.primary_score is None:
+#             assert len(score_target_validation)==1, f"primary_score must be specified when there's more than 1 scorer functions, received: {len(score_target_validation)}"
+#             score = list(score_target_validation.values())[0]
+#             # assert type(score) is not dict, 'when primary_score is not given, the given score must be a scalar'
+#         else:
+#             score = score_target_validation[self.primary_score]
+#         self.history.step(node.iter, score)
+
+#         # Save best model
+#         if isbetter(score_best=self.best_score, score=score, increase_better=self.increase_better):
+#             log.info(f'[EarlyStopping]New best score: {self.best_score} -> {score}')
+#             log.info(f'[EarlyStopping]Saved model: {path}')
+#             torch.save(node.model.state_dict(), path)
+#             if self.discard_best and self.best_model!=None:
+#                 os.remove(self.best_model)
+
+#             self.best_score = score
+#             self.best_model=path
+
+#             # Clear patience tracking
+#             self.history.reset()
+
+#         # patience_end == True when best model did not appear for self.patience times
+#         patience_end = self.patience == len(self.history)
+#         log.info(f'[EarlyStopping][patience: {len(self.history)}/{self.patience}]')
+
+#         return patience_end
+
+#     def reset(self):
+#         # log.info('[EarlyStopper] Resetting...')
+#         self.history.reset()
+#         self.best_model = None
+#         if self.increase_better:
+#             self.best_score = -float('inf')
+#         else:
+#             self.best_score = float('inf')
 
 class EarlyStopping(Validation):
     def __init__(self, dataset, scorer, primary_score=None, increase_better=False, discard_best=True, patience=None):

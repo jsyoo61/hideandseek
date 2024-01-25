@@ -1,8 +1,11 @@
-__version__ = "0.1.5"
+__version__ = "0.1.11"
 from . import eval as E
-from . import node as N
+# from . import trainer
+from .trainer import Trainer
 from . import validation as V
 from . import utils as U
+from . import dataset as D
+from .dataset import Dataset
 
 # TODO: Change V.EarlyStopping funcionality into node. patience & primary scorer etc should be managed by node, not validation.
 # TODO: Change naming: cross validation -> validation

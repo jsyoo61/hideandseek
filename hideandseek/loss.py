@@ -30,7 +30,13 @@ def weighted_crossentropy_loss(dataset, classes=None):
     elif hasattr(dataset, 'get_y'):
         y = np.array([dataset.get_y(idx) in idx in range(len(dataset))])
     else:
-        y = np.array([data['y'] for data in dataset])
+        data_sample = next(iter(dataset))
+        if isinstance(data_sample, dict):
+            y = np.array([data['y'] for data in dataset])
+        elif isinstance(data_sample, tuple) and len(data_sample)==2:
+            y = np.array([data[1] for data in dataset])
+        else:
+            raise Exception(f'unknown dataset return type: {type(data_sample)}')
     y_unique, y_count = np.unique(y, return_counts=True)
     y_count = y_count[np.argsort(y_unique)] # Sort
     if classes is None:
