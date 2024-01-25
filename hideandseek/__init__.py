@@ -1,4 +1,4 @@
-__version__ = "0.1.11"
+__version__ = "0.1.16"
 from . import eval as E
 # from . import trainer
 from .trainer import Trainer

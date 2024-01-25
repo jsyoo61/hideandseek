@@ -18,6 +18,7 @@ import tools.modules
 # from . import validation as V
 from . import utils as U
 from . import eval as E
+from . import model as M
 
 # __all__ = [
 # 'Trainer'
@@ -27,7 +28,6 @@ from . import eval as E
 log = logging.getLogger(__name__)
 
 # %%
-
 class Trainer:
     def __init__(self, network, train_dataset=None, cfg_train={}, criterion=None, network_dir=None, node_dir=None, cfg_val=None, val_dataset=None, val_metrics=None, name='default', verbose=True, amp=False, reproduce=True):
         '''
@@ -76,8 +76,9 @@ class Trainer:
         self.val_metrics = val_metrics
         self.earlystopper = EarlyStopper(increase_better=cfg_val['increase_better'], patience=cfg_val['patience']) if self.val_dataset is not None else None
         if 'target_dataset' in self.cfg_val:
-            assert self.cfg_val['target_dataset'] in self.val_dataset, f'[Validation setup] target_dataset: {self.cfg_val["target_dataset"]} not found in val_dataset: {self.val_dataset.keys()}'
-            assert ~(self.val_dataset is not None ^ self.val_metrics is not None), f'val_dataset and val_metrics must be given together or neither. val_dataset: {self.val_dataset}, val_metrics: {self.val_metrics}'
+            if type(self.val_dataset)==dict:
+                assert self.cfg_val['target_dataset'] in self.val_dataset, f'[Validation setup] target_dataset: {self.cfg_val["target_dataset"]} not found in val_dataset: {self.val_dataset.keys()}'
+            assert ~((self.val_dataset is not None) ^ (self.val_metrics is not None)), f'val_dataset and val_metrics must be given together or neither. val_dataset: {self.val_dataset}, val_metrics: {self.val_metrics}'
 
         self.name = name
         self.verbose = verbose
@@ -112,7 +113,7 @@ class Trainer:
 
     def set_model(self):
         '''Set miscellaneous variables'''
-        self.model = BaseModel(self.network, amp=self.amp)
+        self.model = M.BaseModel(self.network, amp=self.amp)
         self.misc = tools.TDict()
         if self.train_dataset is not None:
             if hasattr(self.train_dataset, 'get_f'): # get_f equal to preprocessing pipeline before feeding to network
@@ -127,14 +128,14 @@ class Trainer:
                 scores = {}
                 for name, dataset in self.val_dataset.items():
                     d_results = E.test_model(self.model, dataset, batch_size=self.cfg_train['batch_size'], amp=self.amp)
-                    score = evaluate(d_results, self.val_metrics)
+                    score = E.evaluate(d_results, self.val_metrics)
                     scores[name] = score
                     self.print(f'[dataset_name: {name}] Validation Score: {score}')
                 score = scores[self.cfg_val['target_dataset']]
             else:
                 d_results = E.test_model(self.model, self.val_dataset, batch_size=self.cfg_train['batch_size'], amp=self.amp)
-                score = evaluate(d_results, self.val_metrics)
-                self.print(f'Validation Score: {scores}')
+                score = E.evaluate(d_results, self.val_metrics)
+                self.print(f'Validation Score: {score}')
             
             if self.earlystopper is not None:
                 if type(score) is dict:
@@ -469,3 +470,73 @@ class Trainer:
         network_path = os.path.join(path, 'network.pt')
         self.print(f'[load] Loading network from: {network_path}')
         self.network.load_state_dict(torch.load(network_path))
+
+class EarlyStopper():
+    """
+    Returns True if the metric has stopped improving for the given number of patience steps.
+    Saves network in the given path and remembers which network is the best.
+
+    Parameters
+    ----------
+    arg : array-like of shape (n_samples,), default=None
+        Argument explanation.
+        If ``None`` is given, those that appear at least once
+        .. versionadded:: 0.18
+    
+    Functions
+    -------
+    step()
+        returns True/False
+    """
+
+    def __repr__(self):
+        return f'<EarlyStopper>\npatience: {self.patience}\nincrease_better: {self.increase_better}'
+
+    def __init__(self, increase_better, patience, save_dir='network_temp', discard_best=True):
+        self.increase_better = increase_better
+        self.patience = patience
+        self.save_dir = save_dir
+        self.discard_best = discard_best
+
+        os.makedirs(self.save_dir, exist_ok=True)
+        self.history = tools.modules.ValueTracker() # For now, only track single score
+        self.reset()
+
+    def step(self, trainer, score, filename=None):
+        filename = f'network_{trainer.iter}.pt' if filename is None else filename
+
+        self.history.step(trainer.iter, score)
+
+        # Save best network
+        if isbetter(score_best=self.best_score, score=score, increase_better=self.increase_better):
+            path = os.path.join(self.save_dir, filename)
+
+            log.info(f'[EarlyStopping] New best score: {self.best_score} -> {score}')
+            log.info(f'[EarlyStopping] Saved network: {path}')
+            torch.save(trainer.network.state_dict(), path)
+            if self.discard_best and self.best_network!=None:
+                os.remove(self.best_network)
+
+            self.best_score = score
+            self.best_network = path
+
+            # Clear patience tracking
+            self.history.reset()
+
+        # patience_end == True when best network did not appear for self.patience times
+        patience_end = self.patience == len(self.history)
+        log.info(f'[EarlyStopping][patience: {len(self.history)}/{self.patience}]')
+
+        return patience_end
+
+    def reset(self):
+        # log.info('[EarlyStopper] Resetting...')
+        self.history.reset()
+        self.best_network = None
+        if self.increase_better:
+            self.best_score = -float('inf')
+        else:
+            self.best_score = float('inf')
+
+def isbetter(score_best: float, score: float, increase_better: bool):
+    return (not increase_better and score<score_best) or (increase_better and score>score_best)

@@ -86,7 +86,7 @@ class Validation:
 class EarlyStopper():
     """
     Returns True if the metric has stopped improving for the given number of patience steps.
-    Saves model in the given path and remembers which model is the best.
+    Saves network in the given path and remembers which network is the best.
 
     Parameters
     ----------
@@ -119,23 +119,23 @@ class EarlyStopper():
 
         self.history.step(trainer.iter, score)
 
-        # Save best model
+        # Save best network
         if isbetter(score_best=self.best_score, score=score, increase_better=self.increase_better):
             path = os.path.join(self.save_dir, filename)
 
             log.info(f'[EarlyStopping] New best score: {self.best_score} -> {score}')
-            log.info(f'[EarlyStopping] Saved model: {path}')
-            torch.save(trainer.model.state_dict(), path)
-            if self.discard_best and self.best_model!=None:
-                os.remove(self.best_model)
+            log.info(f'[EarlyStopping] Saved network: {path}')
+            torch.save(trainer.network.state_dict(), path)
+            if self.discard_best and self.best_network!=None:
+                os.remove(self.best_network)
 
             self.best_score = score
-            self.best_model = path
+            self.best_network = path
 
             # Clear patience tracking
             self.history.reset()
 
-        # patience_end == True when best model did not appear for self.patience times
+        # patience_end == True when best network did not appear for self.patience times
         patience_end = self.patience == len(self.history)
         log.info(f'[EarlyStopping][patience: {len(self.history)}/{self.patience}]')
 
@@ -144,7 +144,7 @@ class EarlyStopper():
     def reset(self):
         # log.info('[EarlyStopper] Resetting...')
         self.history.reset()
-        self.best_model = None
+        self.best_network = None
         if self.increase_better:
             self.best_score = -float('inf')
         else:
@@ -180,21 +180,21 @@ class EarlyStopper():
 #             score = score_target_validation[self.primary_score]
 #         self.history.step(node.iter, score)
 
-#         # Save best model
+#         # Save best network
 #         if isbetter(score_best=self.best_score, score=score, increase_better=self.increase_better):
 #             log.info(f'[EarlyStopping]New best score: {self.best_score} -> {score}')
-#             log.info(f'[EarlyStopping]Saved model: {path}')
-#             torch.save(node.model.state_dict(), path)
-#             if self.discard_best and self.best_model!=None:
-#                 os.remove(self.best_model)
+#             log.info(f'[EarlyStopping]Saved network: {path}')
+#             torch.save(node.network.state_dict(), path)
+#             if self.discard_best and self.best_network!=None:
+#                 os.remove(self.best_network)
 
 #             self.best_score = score
-#             self.best_model=path
+#             self.best_network=path
 
 #             # Clear patience tracking
 #             self.history.reset()
 
-#         # patience_end == True when best model did not appear for self.patience times
+#         # patience_end == True when best network did not appear for self.patience times
 #         patience_end = self.patience == len(self.history)
 #         log.info(f'[EarlyStopping][patience: {len(self.history)}/{self.patience}]')
 
@@ -203,7 +203,7 @@ class EarlyStopper():
 #     def reset(self):
 #         # log.info('[EarlyStopper] Resetting...')
 #         self.history.reset()
-#         self.best_model = None
+#         self.best_network = None
 #         if self.increase_better:
 #             self.best_score = -float('inf')
 #         else:
@@ -240,21 +240,21 @@ class EarlyStopping(Validation):
             score_ = score
         self.cv_history.append(score_)
 
-        # Save best model
+        # Save best network
         if isbetter(score_best=self.best_score, score=score_, increase_better=self.increase_better):
         # (not self.increase_better and score_<self.best_score) or (self.increase_better and score_>self.best_score):
-            log.info(f'Saved model: {name}')
-            torch.save(node.model.state_dict(), name)
-            if self.discard_best and self.best_model!=None:
-                os.remove(self.best_model)
+            log.info(f'Saved network: {name}')
+            torch.save(node.network.state_dict(), name)
+            if self.discard_best and self.best_network!=None:
+                os.remove(self.best_network)
 
             self.best_score = score_
-            self.best_model=name
+            self.best_network=name
 
             # Clear patience tracking
             self.cv_history.clear()
 
-        # patience_end == True when best model did not appear for self.patience times
+        # patience_end == True when best network did not appear for self.patience times
         patience_end = self.patience == len(self.cv_history)
         log.info(f'[EarlyStopping][patience: {len(self.cv_history)}/{self.cv_history.maxlen}]')
 
@@ -263,7 +263,7 @@ class EarlyStopping(Validation):
     def reset(self):
         log.info('[EarlyStopping] Resetting...')
         self.cv_history.clear()
-        self.best_model = None
+        self.best_network = None
         if self.increase_better:
             self.best_score = -float('inf')
         else:
