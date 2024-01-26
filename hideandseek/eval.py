@@ -99,7 +99,8 @@ def test_torch(network, dataset, batch_size=64, targets_type=None, test_f=None, 
                 result_dict = test_f(data=data, network=network, result_dict=result_dict, device=device, keep_x=keep_x)
 
     result_dict = {k: torch.cat(v, dim=0) if len(v)>0 else v for k, v in result_dict.items()}
-    if amp: result_dict = {k: v.to(torch.float16) for k, v in result_dict.items()}
+    if amp: result_dict = {k: v.to(torch.float16) for k, v in result_dict.items()} # Could maintain float16, but numpy sometimes fails with float16.
+    # if amp: result_dict = {k: v.to(torch.float32) for k, v in result_dict.items()} # Could maintain float16, but numpy sometimes fails with float16.
     result_dict = {k: v.numpy() for k, v in result_dict.items()}
 
     network.train() # Is this necessary?

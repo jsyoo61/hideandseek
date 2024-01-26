@@ -7,6 +7,8 @@ import os
 import shutil
 from copy import deepcopy as dcopy
 
+import numpy as np
+
 import torch
 import torch.optim as optim
 import torch.utils.data as D
@@ -127,20 +129,30 @@ class Trainer:
             if type(self.val_dataset)==dict:
                 scores = {}
                 for name, dataset in self.val_dataset.items():
-                    d_results = E.test_model(self.model, dataset, batch_size=self.cfg_train['batch_size'], amp=self.amp)
-                    score = E.evaluate(d_results, self.val_metrics)
+                    d_results = E.test_model(self.model, dataset, batch_size=self.cfg_val['batch_size'], amp=self.amp)
+                    if any([np.isnan(v).any() for v in d_results.values()]):
+                        log.warning(f'[Node: {self.name}][validate] NaN found in d_results. Skipping validation...')
+                        score = {self.cfg_val['criterion']: self.earlystopper.best_score}
+                    else:
+                        score = E.evaluate(d_results, self.val_metrics)
                     scores[name] = score
                     self.print(f'[dataset_name: {name}] Validation Score: {score}')
                 score = scores[self.cfg_val['target_dataset']]
             else:
-                d_results = E.test_model(self.model, self.val_dataset, batch_size=self.cfg_train['batch_size'], amp=self.amp)
-                score = E.evaluate(d_results, self.val_metrics)
+                d_results = E.test_model(self.model, self.val_dataset, batch_size=self.cfg_val['batch_size'], amp=self.amp)
+                if any([np.isnan(v).any() for v in d_results.values()]):
+                    log.warning(f'[Node: {self.name}][validate] NaN found in d_results. Skipping validation...')
+                    score = {self.cfg_val['criterion']: self.earlystopper.best_score}
+                else:
+                    score = E.evaluate(d_results, self.val_metrics)
                 self.print(f'Validation Score: {score}')
             
             if self.earlystopper is not None:
                 if type(score) is dict:
                     score_ = score[self.cfg_val['criterion']]
-
+                else:
+                    score_ = score
+                    
                 patience_end = self.earlystopper.step(self, score_)
                 if patience_end:
                     self.print('patience met, flushing earlystopper history')
