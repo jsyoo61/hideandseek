@@ -91,14 +91,16 @@ def test_torch(network, dataset, batch_size=64, targets_type=None, test_f=None, 
     with torch.no_grad():
         # Mixed precision for acceleration
         if amp:
-            with torch.cuda.amp.autocast():
+            with torch.autocast(device_type=device.type):
                 for data in test_loader:
                     result_dict = test_f(data=data, network=network, result_dict=result_dict, device=device, keep_x=keep_x)
         else:
             for data in test_loader:
                 result_dict = test_f(data=data, network=network, result_dict=result_dict, device=device, keep_x=keep_x)
 
-    result_dict = {k: np.concatenate(v, axis=0) if len(v)>0 else v for k, v in result_dict.items()}
+    result_dict = {k: torch.cat(v, dim=0) if len(v)>0 else v for k, v in result_dict.items()}
+    if amp: result_dict = {k: v.to(torch.float16) for k, v in result_dict.items()}
+    result_dict = {k: v.numpy() for k, v in result_dict.items()}
 
     network.train() # Is this necessary?
 
@@ -156,9 +158,9 @@ def _test_base(data, network, result_dict, device=None, keep_x=False):
     y = data['y'].to(device)
     y_hat = network(x)
 
-    result_dict['y_true'].append(y.cpu().numpy())
-    result_dict['y_hat'].append(y_hat.cpu().numpy())
-    if keep_x: result_dict['x'].append(x.cpu().numpy())
+    result_dict['y_true'].append(y.cpu())
+    result_dict['y_hat'].append(y_hat.cpu())
+    if keep_x: result_dict['x'].append(x.cpu())
     return result_dict
 
 def _test_categorical(data, network, result_dict, device=None, keep_x=False):
@@ -168,11 +170,11 @@ def _test_categorical(data, network, result_dict, device=None, keep_x=False):
     y_hat = network(x)
     y_score = torch.softmax(y_hat, dim=1) # (N, n_classes)
 
-    result_dict['y_true'].append(y.cpu().numpy())
-    result_dict['y_hat'].append(y_hat.cpu().numpy())
-    result_dict['y_score'].append(y_score.cpu().numpy())
-    result_dict['y_pred'].append(y_score.argmax(axis=-1).cpu().numpy())
-    if keep_x: result_dict['x'].append(x.cpu().numpy())
+    result_dict['y_true'].append(y.cpu())
+    result_dict['y_hat'].append(y_hat.cpu())
+    result_dict['y_score'].append(y_score.cpu())
+    result_dict['y_pred'].append(y_score.argmax(axis=-1).cpu())
+    if keep_x: result_dict['x'].append(x.cpu())
     return result_dict
 
 def _test_multihead_categorical(data, network, result_dict, device=None, keep_x=False):
@@ -181,11 +183,11 @@ def _test_multihead_categorical(data, network, result_dict, device=None, keep_x=
     y_hat = network(x)
     y_score = torch.softmax(y_hat, dim=-1) # (N, subtype, n_classes)
 
-    result_dict['y_true'].append(y.cpu().numpy())
-    result_dict['y_hat'].append(y_hat.cpu().numpy())
-    result_dict['y_score'].append(y_score.cpu().numpy())
-    result_dict['y_pred'].append(y_score.argmax(axis=-1).cpu().numpy())
-    if keep_x: result_dict['x'].append(x.cpu().numpy())
+    result_dict['y_true'].append(y.cpu())
+    result_dict['y_hat'].append(y_hat.cpu())
+    result_dict['y_score'].append(y_score.cpu())
+    result_dict['y_pred'].append(y_score.argmax(axis=-1).cpu())
+    if keep_x: result_dict['x'].append(x.cpu())
     return result_dict
 
 def _test_autoencode(data, network, result_dict, device=None):
@@ -193,7 +195,7 @@ def _test_autoencode(data, network, result_dict, device=None):
     z = network.encoder(x)
     x_hat = torch.sigmoid(network.decoder(z))
 
-    x, z, x_hat = x.cpu().numpy(), z.cpu().numpy(), x_hat.cpu().numpy()
+    x, z, x_hat = x.cpu(), z.cpu(), x_hat.cpu()
 
     result_dict['x'].append(x)
     result_dict['z'].append(z)

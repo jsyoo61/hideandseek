@@ -1,0 +1,15 @@
+
+dir: .
+subdir: 0
+
+hydra:
+  output_subdir: .resume
+  run:
+    dir: ${dir}
+
+  sweep:
+    dir: ${dir}
+    subdir: ${subdir}
+
+  job:
+    chdir: True

@@ -251,7 +251,7 @@ class Trainer:
 
             self.iter += 1
             loss = self._update(data)
-            self.print(f'[Node: {self.name}][iter_sum: {self.iter}][Iter: {_iter}/{T}][Batch: {self.n_batch}/{len(self.loader)}][Loss: {loss:.7f} (Avg: {self.train_meter.avg:.7f})]')
+            self.print(f'[iter_sum: {self.iter}][Iter: {_iter}/{T}][Batch: {self.n_batch}/{len(self.loader)}][Loss: {loss:.6f} (Avg: {self.train_meter.avg:.6f})]')
 
             self.loss_tracker.step(self.iter, loss)
 
@@ -321,7 +321,7 @@ class Trainer:
         # When data is given as a dict
         elif datatype is dict:
             data = {key: value.to(self._device) for key, value in data.items()}
-            N = len(next(iter(data))) # number of data in batch
+            N = len(next(iter(data.values()))) # number of data in batch
             outputs = self.forward(**data)
 
         else:

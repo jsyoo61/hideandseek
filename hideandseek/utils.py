@@ -1,7 +1,9 @@
-import os
+from glob import glob
 import logging
+import os
 
 from omegaconf import OmegaConf
+import pandas as pd
 import torch
 
 import tools as T
@@ -17,9 +19,9 @@ Too inconsistent
 def exp_path(path=None, makedirs=True):
     path = '.' if path is None else path
     exp_path = T.Path(path)
-    exp_path.MODEL = 'model' # Save model while training
-    exp_path.RESULT = 'result' # Training results
-    exp_path.NODE = 'node' # Save node info & model. Package to be communicated
+    exp_path.network = 'network' # Save model while training
+    exp_path.result = 'result' # Training results
+    exp_path.model = 'model' # Save model. Package to be transferred
     if makedirs:
         exp_path.makedirs()
     return exp_path
@@ -53,6 +55,63 @@ def exp_setting(cfg, path=None):
     T.random.seed(cfg.random.seed, strict=cfg.random.strict)
     path = exp_path(path)
     return device, path
+
+def walk(walk_dir):
+    '''
+    Returns all directories with .hydra/ 
+    '''
+    dir_list_hydra = glob(os.path.join(walk_dir,'*/.hydra'))
+    dir_list_hydra = list(map(os.path.dirname, dir_list_hydra))
+
+    for subdir in T.os.listdir(walk_dir, join=True, isdir=True):
+        if subdir not in dir_list_hydra:
+            dir_list_hydra.extend(walk(subdir))
+
+    return dir_list_hydra
+
+def overrides_to_dict(listconfig):
+    '''
+    convert .hydra/overrides.yaml (hydra) into dict
+    '''
+    d = {}
+    for cfg in listconfig:
+        key, value = cfg.split('=')
+        d[key]=value
+    return d
+
+
+def load_cfg(subdir):
+    cfg = OmegaConf.load(os.path.join(subdir, '.hydra/config.yaml'))
+    overrides = overrides_to_dict(OmegaConf.load(os.path.join(subdir, '.hydra/overrides.yaml')))
+    return cfg, overrides
+
+def load_cfg_sweep(l_subdir):
+    '''
+    Returns full set of experiment sweep configs
+    '''
+    cfg_overides = list(map(load_cfg, l_subdir))
+    cfg_list, overrides_list = zip(*cfg_overides)
+    df_cfg, df_overrides = pd.DataFrame(cfg_list), pd.DataFrame(overrides_list)
+    independent_var = independent_var(df_overrides)
+
+    return df_cfg, df_overrides
+
+def independent_var(df_cfg):
+    '''
+    Returns the independent variable of a list of cfgs
+    '''
+    # df_cfg = pd.DataFrame(cfg_list)
+    independent_variables = {}
+    for column in df_cfg.columns:
+        try: # Unhashable values raise Error
+            cfg_list = df_cfg[column].unique().tolist()
+        except:
+            cfg_list = df_cfg[column].astype(str).unique().tolist()
+
+        if len(cfg_list) > 1:
+            independent_variables[column] = cfg_list
+    
+    return independent_variables
 
 # %%
 def model_type(model):
