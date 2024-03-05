@@ -263,42 +263,47 @@ def specificity_score(result):
     return tn / (tn+fp)
 
 # Multiclass classification
-def classification_report_full(result, discard_ovr=False):
+def classification_report_full(result, ovr=True):
     '''
     Adds additional metrics to sklearn.classification_report
     '''
-    # TODO: add y_score
     y_score = result['y_score'] if 'y_score' in result else None
-
     y_true, y_pred = result['y_true'], result['y_pred']
+    
     scores = metrics.classification_report(y_true, y_pred, output_dict=True)
-    scores_ovr = {k:dcopy(v) for k, v in scores.items() if k.isnumeric()}
-    scores_all = {k:dcopy(v) for k, v in scores.items() if not k.isnumeric()}
-    more_scorers = {'sensitivity': sensitivity_score, 'specificity': specificity_score, 'accuracy': accuracy_score} # Optimize to reduce redundant computations?
 
-    # Additional metrics
-    for c in scores_ovr.keys():
-        c_int = int(c)
-        y_true__c, y_pred_c = y_true==c_int, y_pred==c_int
-        for scorer_name, scorer in more_scorers.items():
-            scores_ovr[c][scorer_name] = scorer({'y_true': y_true__c, 'y_pred': y_pred_c})
+    if ovr:
+        scores_ovr = {k:dcopy(v) for k, v in scores.items() if k.isnumeric()}
+        scores_all = {k:dcopy(v) for k, v in scores.items() if not k.isnumeric()}
 
-    if y_score is not None:
+        more_scorers_y_pred = {'sensitivity': sensitivity_score, 'specificity': specificity_score, 'accuracy': accuracy_score} # Optimize to reduce redundant computations?
+        more_scorers_y_score = {'auroc': metrics.roc_auc_score}
+        more_scorers = list(more_scorers_y_pred.keys()) + list(more_scorers_y_score.keys())
+
+        # Additional metrics
         for c in scores_ovr.keys():
             c_int = int(c)
-            y_score_ = y_score[:, c_int]
-            metrics.roc_auc_score(y_true, y_score_)
+            y_true__c, y_pred_c = y_true==c_int, y_pred==c_int
+            for scorer_name, scorer in more_scorers_y_pred.items():
+                scores_ovr[c][scorer_name] = scorer({'y_true': y_true__c, 'y_pred': y_pred_c})
 
-    # summary
-    for scorer_name, scorer in more_scorers.items():
-        scores_all['macro avg'][scorer_name] = np.mean([scores_ovr_[scorer_name] for scores_ovr_ in scores_ovr.values()])
-        scores_all['weighted avg'][scorer_name] = np.sum([scores_ovr_[scorer_name]*scores_ovr_['support'] for scores_ovr_ in scores_ovr.values()]) / scores_all['weighted avg']['support']
+        if y_score is not None:
+            for c in scores_ovr.keys():
+                c_int = int(c)
+                y_true_ = y_true==c_int
+                y_score_ = y_score[:, c_int]
+                for scorer_name, scorer in more_scorers_y_score.items():
+                    scores_ovr[c][scorer_name] = scorer(y_true_, y_score_)
 
-    if discard_ovr:
-        return scores_all
-    else:
-        scores_ovr.update(scores_all)
-        return scores_ovr
+        # summary
+        for scorer_name in more_scorers:
+            scores_all['macro avg'][scorer_name] = np.mean([scores_ovr_[scorer_name] for scores_ovr_ in scores_ovr.values()])
+            scores_all['weighted avg'][scorer_name] = np.sum([scores_ovr_[scorer_name]*scores_ovr_['support'] for scores_ovr_ in scores_ovr.values()]) / scores_all['weighted avg']['support']
+
+        scores.update(scores_ovr)
+        scores.update(scores_all)
+
+    return scores
 
 # Multihead classification score
 def multihead_accuracy_score(y_pred, y):

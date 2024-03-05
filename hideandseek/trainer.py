@@ -157,6 +157,8 @@ class Trainer:
                 if patience_end:
                     self.print('patience met, flushing earlystopper history')
                     self.earlystopper.history.reset()
+                    
+        torch.cuda.empty_cache()
         return patience_end
 
     def generate_loader(self):
@@ -432,6 +434,16 @@ class Trainer:
             del state_dict['threshold']
 
         self.__dict__.update(state_dict) # update attributes
+        
+    def load_best_model(self):
+        if self.earlystopper is not None:
+            if self.earlystopper.best_network != None:
+                self.print(f'Loading best network: {self.earlystopper.best_network}')
+                self.network.load_state_dict(torch.load(self.earlystopper.best_network))
+            else:
+                self.print(f'No best_network found in self.earlystopper. No network loaded.')
+        else:
+            self.print('self.earlystopper not defined. No network loaded.')
 
     def save(self, path=None, best=True):
         '''

@@ -1,6 +1,5 @@
 import logging
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -26,32 +25,31 @@ def weighted_crossentropy_loss(dataset, classes=None):
     """
     # Loss function
     if hasattr(dataset, 'get_y_all'):
-        y = np.array(dataset.get_y_all())
+        y = dataset.get_y_all()
     elif hasattr(dataset, 'get_y'):
-        y = np.array([dataset.get_y(idx) in idx in range(len(dataset))])
+        y = torch.stack([dataset.get_y(idx) for idx in range(len(dataset))])
     else:
         data_sample = next(iter(dataset))
         if isinstance(data_sample, dict):
-            y = np.array([data['y'] for data in dataset])
+            y = torch.stack([data['y'] for data in dataset])
         elif isinstance(data_sample, tuple) and len(data_sample)==2:
-            y = np.array([data[1] for data in dataset])
+            y = torch.stack([data[1] for data in dataset])
         else:
             raise Exception(f'unknown dataset return type: {type(data_sample)}')
-    y_unique, y_count = np.unique(y, return_counts=True)
-    y_count = y_count[np.argsort(y_unique)] # Sort
+    y_unique, y_count = torch.unique(y, return_counts=True, sorted=True) # sorted by default
+
     if classes is None:
-        class_weight = torch.tensor(1/y_count, dtype=torch.float)
-        class_weight /= class_weight.sum()
+        class_weight = 1/y_count
     else:
         log.info(f'[weighted_crossentropyloss] classes found, expanding weight vector to: {len(classes)}')
         class_weight = torch.zeros(len(classes))
         assert set(y_unique).issubset(set(classes))
         for c, y_count_ in zip(y_unique, y_count):
-            class_weight[c] = 1/y_count_
-        class_weight /= class_weight.sum()
+            class_weight[c] = 1/y_count_ 
+    class_weight /= class_weight.sum()
 
     criterion = nn.CrossEntropyLoss(weight = class_weight)
-    log.info('weighted_crossentropyloss - CrossEntropyLoss')
+    log.info('Weighted_crossentropyloss - CrossEntropyLoss')
     log.info(f'y_count: {y_count}')
     log.info(f'CrossEntropy Weighted: {criterion.weight}')
 
