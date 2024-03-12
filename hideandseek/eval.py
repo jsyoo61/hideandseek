@@ -75,7 +75,7 @@ def _test_assertion(dataset, targets_type, test_f, result_dict, keep_x):
         raise Exception(f'test_f and result_dict must either both be provided or None, received [test_f: {test_f}][result_dict: {result_dict}]')
     return test_f, result_dict
 
-def test_torch(network, dataset, batch_size=64, targets_type=None, test_f=None, result_dict=None, keep_x=False, num_workers=0, amp=False):
+def test_network(network, dataset, batch_size=64, targets_type=None, test_f=None, result_dict=None, keep_x=False, num_workers=0, amp=False):
     '''
     inference stage of network.
     '''
@@ -99,11 +99,10 @@ def test_torch(network, dataset, batch_size=64, targets_type=None, test_f=None, 
                 result_dict = test_f(data=data, network=network, result_dict=result_dict, device=device, keep_x=keep_x)
 
     result_dict = {k: torch.cat(v, dim=0) if len(v)>0 else v for k, v in result_dict.items()}
-    if amp: result_dict = {k: v.to(torch.float16) for k, v in result_dict.items()} # Could maintain float16, but numpy sometimes fails with float16.
-    # if amp: result_dict = {k: v.to(torch.float32) for k, v in result_dict.items()} # Could maintain float16, but numpy sometimes fails with float16.
+    if amp: result_dict = {k: v.to(torch.float16) for k, v in result_dict.items()} # Transform bfloat16 (amp) to regular float16
     result_dict = {k: v.numpy() for k, v in result_dict.items()}
 
-    network.train() # Is this necessary?
+    # network.train() # Is this necessary?
 
     return result_dict
 
@@ -114,7 +113,7 @@ def test_model(model, dataset, batch_size=64, targets_type=None, test_f=None, re
     '''
     network = model.network
     dataset, misc_temp = transfer_misc(model, dataset)
-    result_dict = test_torch(network, dataset, batch_size, targets_type, test_f, result_dict, keep_x, num_workers, amp)
+    result_dict = test_network(network, dataset, batch_size, targets_type, test_f, result_dict, keep_x, num_workers, amp)
     dataset = inverse_transfer_misc(misc_temp, dataset)
 
     return result_dict
@@ -271,6 +270,7 @@ def classification_report_full(result, ovr=True):
     y_true, y_pred = result['y_true'], result['y_pred']
     
     scores = metrics.classification_report(y_true, y_pred, output_dict=True)
+    scores['mcc'] = metrics.matthews_corrcoef(y_true, y_pred)
 
     if ovr:
         scores_ovr = {k:dcopy(v) for k, v in scores.items() if k.isnumeric()}

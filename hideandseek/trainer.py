@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 
 # %%
 class Trainer:
-    def __init__(self, network, train_dataset=None, cfg_train={}, criterion=None, network_dir=None, node_dir=None, cfg_val=None, val_dataset=None, val_metrics=None, name='default', verbose=True, amp=False, reproduce=True):
+    def __init__(self, network, train_dataset=None, cfg_train={}, criterion=None, network_dir=None, model_dir=None, cfg_val=None, val_dataset=None, val_metrics=None, name='default', verbose=True, amp=False, reproduce=True):
         '''
         Things Trainer do:
         - train network with early stopping, given hyperparameters
@@ -62,7 +62,7 @@ class Trainer:
         Recommended way of making hs.node.Node object is like the following:
 
             kwargs = {'network': Network(), 'train_dataset': train_dataset, 'validation': None, 'cfg_train': cfg.train,
-                    'criterion': criterion, 'network_dir': path['network'], 'node_dir': path['node'], 'verbose': True, 'amp': True}
+                    'criterion': criterion, 'network_dir': path['network'], 'model_dir': path['node'], 'verbose': True, 'amp': True}
             node = hs.node.Node(**kwargs)
         '''
         # Store configurations
@@ -71,7 +71,7 @@ class Trainer:
         self.cfg_train = dcopy(dict(cfg_train))
         self.criterion = criterion
         self.network_dir = network_dir
-        self.node_dir = node_dir
+        self.model_dir = model_dir
 
         self.cfg_val = dcopy(dict(cfg_val)) if cfg_val is not None else {}
         self.val_dataset = val_dataset
@@ -92,9 +92,9 @@ class Trainer:
             if os.path.exists(self.network_dir): log.warning(f'path: {self.network_dir} exists. Be careful')
             os.makedirs(self.network_dir, exist_ok=True)
 
-        if self.node_dir is not None:
-            if os.path.exists(self.node_dir): log.warning(f'path: {self.node_dir} exists. Be careful')
-            os.makedirs(self.node_dir, exist_ok=True)
+        if self.model_dir is not None:
+            if os.path.exists(self.model_dir): log.warning(f'path: {self.model_dir} exists. Be careful')
+            os.makedirs(self.model_dir, exist_ok=True)
 
         self.train_meter = tools.modules.AverageMeter() # Tracks loss per epoch
         self.loss_tracker = tools.modules.ValueTracker() # Tracks loss over all training
@@ -451,7 +451,7 @@ class Trainer:
         state_dict() -> path/state_dict.p
         network.state_dict() -> path/network.pt
         '''
-        path = self.node_dir if path is None else path
+        path = self.model_dir if path is None else path
         self.print(f'[Node: {self.name}]')
 
         state_dict_path = os.path.join(path, 'node.p')
@@ -482,7 +482,7 @@ class Trainer:
         path/node.p -> state_dict
         path/network.pt -> network.state_dict
         '''
-        path = self.node_dir if path is None else path
+        path = self.model_dir if path is None else path
         self.print(f'[Node: {self.name}]')
 
         state_dict_path = os.path.join(path, 'node.p')
