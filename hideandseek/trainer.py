@@ -209,10 +209,10 @@ class Trainer:
         if new_op or not hasattr(self, 'op'):
             if not hasattr(self, 'op') and not new_op:
                 log.warning("new_op=False when there's no pre-existing optimizer. Ignoring new_op...")
-            # Weight decay optional
-            self.op = optim.Adam(self.network.parameters(), lr=self.cfg_train['lr'], weight_decay=self.cfg_train['weight_decay']) if 'weight_decay' in self.cfg_train \
-                        else optim.Adam(self.network.parameters(), lr=self.cfg_train['lr'])
-            # self.op = optim.Adam(self.network.parameters(), **self.cfg_train)
+            
+            l_kwargs = ['lr', 'weight_decay']
+            kwargs = {key: self.cfg_train[key] for key in l_kwargs if key in self.cfg_train}
+            self.op = optim.Adam(self.network.parameters(), **kwargs)
 
         if horizon == 'epoch':
             self._step_epoch(T=epoch, no_val=no_val, device=device)
