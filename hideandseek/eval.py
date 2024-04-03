@@ -277,8 +277,7 @@ def classification_report_full(result, ovr=True):
         scores_all = {k:dcopy(v) for k, v in scores.items() if not k.isnumeric()}
 
         more_scorers_y_pred = {'sensitivity': sensitivity_score, 'specificity': specificity_score, 'accuracy': accuracy_score} # Optimize to reduce redundant computations?
-        more_scorers_y_score = {'auroc': metrics.roc_auc_score}
-        more_scorers = list(more_scorers_y_pred.keys()) + list(more_scorers_y_score.keys())
+        more_scorers_y_score = {}
 
         # Additional metrics
         for c in scores_ovr.keys():
@@ -288,6 +287,7 @@ def classification_report_full(result, ovr=True):
                 scores_ovr[c][scorer_name] = scorer({'y_true': y_true__c, 'y_pred': y_pred_c})
 
         if y_score is not None:
+            more_scorers_y_score['auroc'] = metrics.roc_auc_score
             for c in scores_ovr.keys():
                 c_int = int(c)
                 y_true_ = y_true==c_int
@@ -296,6 +296,7 @@ def classification_report_full(result, ovr=True):
                     scores_ovr[c][scorer_name] = scorer(y_true_, y_score_)
 
         # summary
+        more_scorers = list(more_scorers_y_pred.keys()) + list(more_scorers_y_score.keys())
         for scorer_name in more_scorers:
             scores_all['macro avg'][scorer_name] = np.mean([scores_ovr_[scorer_name] for scores_ovr_ in scores_ovr.values()])
             scores_all['weighted avg'][scorer_name] = np.sum([scores_ovr_[scorer_name]*scores_ovr_['support'] for scores_ovr_ in scores_ovr.values()]) / scores_all['weighted avg']['support']
