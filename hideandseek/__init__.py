@@ -1,12 +1,11 @@
-__version__ = "0.1.29"
+__version__ = "0.2.0" # Starting 0.2.0, somewhat functional
 from . import eval as E
-# from . import trainer
 from .trainer import Trainer
 from . import validation as V
 from . import utils as U
 from . import dataset as D
 from .dataset import Dataset
 
-# TODO: Change V.EarlyStopping funcionality into node. patience & primary scorer etc should be managed by node, not validation.
-# TODO: Change naming: cross validation -> validation
 # TODO: Change naming: eval -> evaluation (eval is a python function)
+# TODO: Make scripts for projects to fork from
+# TODO: Refine tutorial

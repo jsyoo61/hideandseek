@@ -49,6 +49,7 @@ class Trainer:
             lr
             batch_size
             weight_decay (optional)
+            cv_step (optional)
         
         :param cfg_val (optional): dict-like object which contains:
             increase_better
@@ -210,20 +211,20 @@ class Trainer:
             if not hasattr(self, 'op') and not new_op:
                 log.warning("new_op=False when there's no pre-existing optimizer. Ignoring new_op...")
             
-            l_kwargs = ['lr', 'weight_decay']
+            l_kwargs = ['lr', 'weight_decay', 'amsgrad']
             kwargs = {key: self.cfg_train[key] for key in l_kwargs if key in self.cfg_train}
             self.op = optim.Adam(self.network.parameters(), **kwargs)
 
         if horizon == 'epoch':
-            self._step_epoch(T=epoch, no_val=no_val, device=device)
+            self._update_epoch(T=epoch, no_val=no_val, device=device)
         elif horizon=='step':
-            self._step_step(T=step, no_val=no_val, device=device)
+            self._update_step(T=step, no_val=no_val, device=device)
 
         # TODO: Return criterion back to its original device, meaning we have to store its previous device info
         self.criterion = self.criterion.cpu()
         return self.loss_tracker
 
-    def _step_epoch(self, T, no_val=False, device=None):
+    def _update_epoch(self, T, no_val=False, device=None):
         self._device = device if device is not None else tools.torch.get_device(self.network)
 
         _iter = 0
@@ -244,7 +245,7 @@ class Trainer:
                         self.print('Patience met, stopping training')
                         return None # return None since double break is impossible in python
 
-    def _step_step(self, T, no_val=False, device=None):
+    def _update_step(self, T, no_val=False, device=None):
         self._device = device if device is not None else tools.torch.get_device(self.network)
         if hasattr(self, '_loader_inst'): del self._loader_inst # Load data from the 1st batch
 
@@ -361,7 +362,7 @@ class Trainer:
         elif outputstype==dict:
             loss = self.criterion(**outputs)
         else:
-            raise Exception(f'return type from forward must be one of [tuple, list, dict], received: {type(data_pred)}')
+            raise Exception(f'return type from forward must be one of [tuple, list, dict], received: {type(outputs)}')
         return loss
 
     def epoch_f(self):
