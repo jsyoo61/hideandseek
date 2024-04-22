@@ -79,7 +79,6 @@ def overrides_to_dict(listconfig):
         d[key]=value
     return d
 
-
 def load_cfg(subdir):
     cfg = OmegaConf.load(os.path.join(subdir, '.hydra/config.yaml'))
     overrides = overrides_to_dict(OmegaConf.load(os.path.join(subdir, '.hydra/overrides.yaml')))
@@ -128,7 +127,6 @@ def model_type(model):
 def extract_dataset(dataset):
     if hasattr(dataset, 'get_x_all'):
         x = dataset.get_x_all()
-
 
     return {'x': x, 'y': y}
 

@@ -17,9 +17,8 @@ import tools # since T is used as a variable in this module, refrain from "impor
 import tools.torch
 import tools.modules
 
-# from . import validation as V
 from . import utils as U
-from . import eval as E
+from . import evaluation as E
 from . import model as M
 
 # __all__ = [
@@ -324,7 +323,7 @@ class Trainer:
 
     def _forward(self, data):
         '''
-        Pseudo function to support amp (automatic mixed precision)
+        Pseudo function to support passing tuple or dict from a batch from dataloader to forward()
         '''
         datatype = type(data)
         # When data is given as a tuple/list
@@ -345,12 +344,14 @@ class Trainer:
 
     def forward(self, x, y):
         """
-        Forward pass. Receive data and return the loss function.
-        Inherit Node and define new forward() function to build custom forward pass.
+        Forward pass: Receive data and pass values to criterion.
+        Define forward for custom trainers.
 
         May return tuple or dictionary, whichever will be feeded to criterion.
-        """
 
+        Defaults to args[0] feeding to self.network (assuming x), and args[1] feeding to self.criterion (assuming y)
+        """
+        
         y_hat = self.network(x)
 
         return y_hat, y
@@ -361,8 +362,10 @@ class Trainer:
             loss = self.criterion(*outputs)
         elif outputstype==dict:
             loss = self.criterion(**outputs)
+        elif outputstype==torch.Tensor:
+            loss = self.criterion(outputs)
         else:
-            raise Exception(f'return type from forward must be one of [tuple, list, dict], received: {type(outputs)}')
+            raise Exception(f'return type from forward must be one of [tuple, list, dict, torch.Tensor], received: {type(outputs)}')
         return loss
 
     def epoch_f(self):
@@ -452,7 +455,7 @@ class Trainer:
         state_dict() -> path/state_dict.p
         network.state_dict() -> path/network.pt
         '''
-        path = self.model_dir if path is None else path
+        path = self.network_dir if path is None else path
         self.print(f'[Node: {self.name}]')
 
         state_dict_path = os.path.join(path, 'node.p')
@@ -483,7 +486,7 @@ class Trainer:
         path/node.p -> state_dict
         path/network.pt -> network.state_dict
         '''
-        path = self.model_dir if path is None else path
+        path = self.network_dir if path is None else path
         self.print(f'[Node: {self.name}]')
 
         state_dict_path = os.path.join(path, 'node.p')

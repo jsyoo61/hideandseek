@@ -1,41 +1,106 @@
+# %%
 import logging
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data as D
 
 import tools as T
-import tools.torch
+
+# TODO: Remove everything except feature_visualize() (optimize(), _optimize(), RandomSampler, ...)
 
 # %%
 log = logging.getLogger(__name__)
 
 # %%
-'''
-feature visualization module
-'''
+def feature_visualize(objective, data, maximize=True, lr=1e-1, updates=100, threshold=None, preprocess=None, regularization=None, verbose=False):
+    """
+    Feature visualization give objective
 
+    Parameters
+    ----------
+    objective : nn.Module that takes data as input and outputs a single value to optimize.
+        the parameters of objective follows the device of data
 
-"""
+    data: torch.Tensor of shape (n_sample, *input_shape)
+        Could be sample data or noise
+    
+    maximize: bool, default=True
+        If True, then output of objective is multiplied my -1 (since loss is minimized in pytorch)
 
-Parameters
-----------
-objective : nn.Module object which takes an input and outputs a single value to optimize.
-    Recommended way to make this object is to build another class inheriting nn.Module,
-    and constructing the objective function within the class.
+    lr: float, default=1e-1
+        Learning rate
 
-See Also
---------
-Output_i : nn.Module which computes i-th output of the given model.
-    Useful to construct simple objective function.
+    updates: int, default=100
+        Number of updates
 
-Examples
---------
->>>
-"""
+    threshold: float, default=None
+        If given, then optimization stops when output of objective is larger than threshold (for maximize=True), or less than threshold (maximize=False).
+    
+    preprocess: callable, default=None
+        Preprocess the input data before passing to the objective function.
+        The feature visualization will return the preprocessed data.
+
+    regularization: callable, default=None
+        Regularize the input data before passing to the objective function.
+        
+    Returns
+    -------
+    data : torch.Tensor
+    """
+
+    data = data.clone() # Original tensor is not modified
+    data.requires_grad = True
+
+    objective.to(data.device)
+    objective.eval()
+
+    # Gradient descent not ascent, so negate the objective if maximize=True
+    if maximize: threshold = -threshold if threshold is not None else None
+
+    # Thresholded flag for batch data when objective threshold is given
+    if threshold is not None:
+        thresholded = torch.zeros(len(data), dtype=torch.bool, device=data.device)
+        data_optimized = torch.empty_like(data)
+
+    optimizer = optim.Adam([data], lr=lr) # Defaults to Adam
+
+    l_history = []
+    for i in range(1,updates+1):
+        data_p = preprocess(data) if preprocess is not None else data
+        data_r = regularization(data_p) if regularization is not None else data_p
+        loss = objective(data_r)
+
+        if maximize:
+            loss = -loss
+
+        l_history.append(data_p.detach().clone())
+        if threshold is not None:
+            thresholded_ = (loss.detach() < threshold)
+            store_idx = thresholded_ & ~thresholded
+            data_optimized[store_idx] = data[store_idx].detach().clone()
+            thresholded[store_idx] = True
+            
+            print(-loss, thresholded)
+            if thresholded.all(): break
+
+        # if threshold is not None: print(loss, thresholded)
+        loss = loss.mean()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        if verbose: print(f'[{i}/{updates}][Loss: {loss.item()}]')
+
+    if threshold is not None:
+        data_optimized[~thresholded] = data[~thresholded].detach().clone()
+        data = data_optimized
+    
+    with torch.no_grad():
+        features = preprocess(data)
+
+    return features
 
 class Output_i(nn.Module):
     """
@@ -75,10 +140,7 @@ class Output_i(nn.Module):
 
         if self.maximize:
             objective = -objective
-        # if self.maximize:
-        #     objective = -y_hat[:, self.class_i]
-        # else:
-        #     objective = y_hat[:, self.class_i]
+            
         return objective
 
 class RandomSampler():
