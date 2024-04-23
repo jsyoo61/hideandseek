@@ -458,10 +458,10 @@ class Trainer:
         path = self.network_dir if path is None else path
         self.print(f'[Node: {self.name}]')
 
-        state_dict_path = os.path.join(path, 'node.p')
-        self.print(f'[save] Saving node info to: {state_dict_path}')
-        state_dict = self.state_dict()
+        self.print(f'[save] Saving Model info to: {state_dict_path}')
         self.print(f'[save] state_dict: {list(state_dict.keys())}')
+        state_dict_path = os.path.join(path, 'model.p')
+        state_dict = self.state_dict()
         tools.save_pickle(state_dict, state_dict_path)
 
         network_path = os.path.join(path, 'network.pt')

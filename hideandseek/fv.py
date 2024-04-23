@@ -64,13 +64,18 @@ def feature_visualize(objective, data, maximize=True, lr=1e-1, updates=100, thre
     if threshold is not None:
         thresholded = torch.zeros(len(data), dtype=torch.bool, device=data.device)
         data_optimized = torch.empty_like(data)
+    
+    # Default is doing nothing
+    preprocess = nn.Identity() if preprocess is None else preprocess
+    regularization = nn.Identity() if regularization is None else regularization
 
-    optimizer = optim.Adam([data], lr=lr) # Defaults to Adam
+    # Defaults to Adam optimizer
+    optimizer = optim.Adam([data], lr=lr) 
 
     l_history = []
     for i in range(1,updates+1):
-        data_p = preprocess(data) if preprocess is not None else data
-        data_r = regularization(data_p) if regularization is not None else data_p
+        data_p = preprocess(data)
+        data_r = regularization(data_p)
         loss = objective(data_r)
 
         if maximize:
@@ -83,15 +88,16 @@ def feature_visualize(objective, data, maximize=True, lr=1e-1, updates=100, thre
             data_optimized[store_idx] = data[store_idx].detach().clone()
             thresholded[store_idx] = True
             
-            print(-loss, thresholded)
             if thresholded.all(): break
 
-        # if threshold is not None: print(loss, thresholded)
         loss = loss.mean()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        if verbose: print(f'[{i}/{updates}][Loss: {loss.item()}]')
+        
+        if verbose:
+            loss = -loss.item() if maximize else loss.item()
+            print(f'[{i}/{updates}][Loss: {loss}]')
 
     if threshold is not None:
         data_optimized[~thresholded] = data[~thresholded].detach().clone()

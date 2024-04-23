@@ -1,4 +1,4 @@
-__version__ = "0.2.1" # Starting 0.2.0, somewhat functional
+__version__ = "0.2.3" # Starting 0.2.0, somewhat functional
 from . import evaluation as E
 from .trainer import Trainer
 # from . import validation as V
