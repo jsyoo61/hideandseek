@@ -63,7 +63,7 @@ class Trainer:
 
             kwargs = {'network': Network(), 'train_dataset': train_dataset, 'validation': None, 'cfg_train': cfg.train,
                     'criterion': criterion, 'network_dir': path['network'], 'verbose': True, 'amp': True}
-            node = hs.node.Node(**kwargs)
+            node = hs.Trainer(**kwargs)
         '''
         # Store configurations
         self.network = network
@@ -114,7 +114,7 @@ class Trainer:
         self.misc = tools.TDict()
         if self.train_dataset is not None:
             if hasattr(self.train_dataset, 'get_f'): # get_f equal to preprocessing pipeline before feeding to network
-                self.print('get_f found in loader.dataset')
+                self.print('get_f found in train_dataset')
                 self.misc.get_f = self.train_dataset.get_f
 
     def validate(self):

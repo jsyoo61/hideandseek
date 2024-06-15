@@ -1,0 +1,11 @@
+# @package _global_
+nn:
+  _target_: neuralnetworks.Network
+  n_classes: 3
+  n_channel_list: 
+    - 64
+    - 128
+    - 256
+    - 512
+    - 1024
+  n_repeat: 2

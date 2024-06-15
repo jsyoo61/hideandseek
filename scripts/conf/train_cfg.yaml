@@ -1,6 +1,0 @@
-defaults:
-  - /path
-
-
-# Train config
-amp: True

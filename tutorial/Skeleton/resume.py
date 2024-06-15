@@ -1,3 +1,9 @@
+'''
+Resume any hydra python file that has terminated.
+Useful for resuming randomly dead sweep jobs.
+
+'''
+
 import os
 import functools
 import logging
@@ -20,7 +26,7 @@ def setup(cfg):
     # Load config
     cfg_resume = OmegaConf.load('.hydra/config.yaml')
 
-    # Remove remnants
+    # Remove everything but .hydra folder
     l_dir = T.os.listdir(isdir=True)
     l_dir.remove('.hydra')
     for directory in l_dir:
@@ -29,7 +35,7 @@ def setup(cfg):
     return cfg_resume
 
 # %%
-@hydra.main(config_path='config', config_name='resume_cfg', version_base='1.1')
+@hydra.main(config_path='config', config_name='resume', version_base='1.2')
 def main(cfg: DictConfig) -> None: # Load configs automatically
     cfg_resume = setup(cfg)
     run.main.__wrapped__(cfg_resume) # Unwrapp hydra.main() which loads configs from the path set in hydraconfig==resume_cfg

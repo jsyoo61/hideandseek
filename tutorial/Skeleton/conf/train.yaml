@@ -1,0 +1,41 @@
+defaults:
+  - /dir
+  - cv: nested_kfold
+  - nn: nEMGNet
+
+train:
+  update:
+    lr: 1e-3
+    batch_size: 32
+    epoch: 100
+    cv_step: 50
+        
+  validation:
+    target_dataset: val
+    batch_size: 128 # test batch_size
+    patience: 100 # About 8-9 epochs with smallest batch_size of 128
+    criterion: accuracy
+    increase_better: True
+
+  criterion:
+    _target_: hideandseek.loss.weighted_crossentropy_loss
+
+amp: False
+save_model: true
+save_result: true
+
+# ML
+random:
+  seed: 0
+  strict: False # Random convolution operator for minimal deviation with speed
+
+gpu_id: null # Ignored in multirun, when multiprocess job_num exists
+
+# Run directories
+hydra:
+  run:
+    dir: outputs/train1/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/train1/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  job:
+    chdir: true

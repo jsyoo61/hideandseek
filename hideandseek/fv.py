@@ -74,6 +74,8 @@ def feature_visualize(objective, data, maximize=True, lr=1e-1, updates=100, thre
 
     l_history = []
     for i in range(1,updates+1):
+
+        # Forward pass
         data_p = preprocess(data)
         data_r = regularization(data_p)
         loss = objective(data_r)
@@ -81,6 +83,7 @@ def feature_visualize(objective, data, maximize=True, lr=1e-1, updates=100, thre
         if maximize:
             loss = -loss
 
+        # Check loss < threshold to stop SGD update
         l_history.append(data_p.detach().clone())
         if threshold is not None:
             thresholded_ = (loss.detach() < threshold)
@@ -90,6 +93,7 @@ def feature_visualize(objective, data, maximize=True, lr=1e-1, updates=100, thre
             
             if thresholded.all(): break
 
+        # SGD Update
         loss = loss.mean()
         optimizer.zero_grad()
         loss.backward()
@@ -103,6 +107,7 @@ def feature_visualize(objective, data, maximize=True, lr=1e-1, updates=100, thre
         data_optimized[~thresholded] = data[~thresholded].detach().clone()
         data = data_optimized
     
+    # Pass preprocess
     with torch.no_grad():
         features = preprocess(data)
 
@@ -149,124 +154,126 @@ class Output_i(nn.Module):
             
         return objective
 
-class RandomSampler():
-    '''
-    Sample random data
-    '''
-    allowed_methods = ['rand', 'randn']
-    def __init__(self, input_shape, method='rand'):
-        self.input_shape = input_shape
-        self.method = method
-        assert method in self.allowed_methods, f'allowed methods are: {self.allowed_methods}\nreceived: {method}'
+# DEPRECATED: Everything can be done with much cleaner code of feature_visualize()
 
-    def sample(self, n_sample, method=None):
-        method = self.method if method is None else method
-        if method == 'rand':
-            sample = torch.rand(n_sample, *self.input_shape)
-        elif method == 'randn':
-            sample = torch.randn(n_sample, *self.input_shape)
-        return sample
+# class RandomSampler():
+#     '''
+#     Sample random data
+#     '''
+#     allowed_methods = ['rand', 'randn']
+#     def __init__(self, input_shape, method='rand'):
+#         self.input_shape = input_shape
+#         self.method = method
+#         assert method in self.allowed_methods, f'allowed methods are: {self.allowed_methods}\nreceived: {method}'
 
-# %%
-def _optimize(objective, sample, updates, Optimizer, optimizer_kwargs, preprocess=None, regularization=None, threshold=None, return_best=False, verbose=False):
-    device_original = sample.device
-    device = T.torch.get_device(objective)
-    sample = sample.clone().detach().to(device) # clone sample so that original tensor will not be modified.
-    sample.requires_grad_(True)
+#     def sample(self, n_sample, method=None):
+#         method = self.method if method is None else method
+#         if method == 'rand':
+#             sample = torch.rand(n_sample, *self.input_shape)
+#         elif method == 'randn':
+#             sample = torch.randn(n_sample, *self.input_shape)
+#         return sample
 
-    # if not sample.requires_grad:
-    #     warnings.warn('Provide sample with sample.requires_grad_(True).\
-    #     _optmize() function will automatically setting requires_grad to True, but this may resuilt in undesired results.')
+# # %%
+# def _optimize(objective, sample, updates, Optimizer, optimizer_kwargs, preprocess=None, regularization=None, threshold=None, return_best=False, verbose=False):
+#     device_original = sample.device
+#     device = T.torch.get_device(objective)
+#     sample = sample.clone().detach().to(device) # clone sample so that original tensor will not be modified.
+#     sample.requires_grad_(True)
 
-    optimizer_ = Optimizer([sample], **optimizer_kwargs)
+#     # if not sample.requires_grad:
+#     #     warnings.warn('Provide sample with sample.requires_grad_(True).\
+#     #     _optmize() function will automatically setting requires_grad to True, but this may resuilt in undesired results.')
 
-    if preprocess is not None:
-        log.info('preprocess specified')
-    if regularization is not None:
-        log.info('regularization specified')
+#     optimizer_ = Optimizer([sample], **optimizer_kwargs)
 
-    if verbose:
-        with torch.no_grad():
-            sample_processed = sample if preprocess is None else preprocess(sample)
-            sample_regularized = sample if regularization is None else regularization(sample_processed)
-            y_hat = objective(sample_regularized)
-            loss = y_hat.mean()
-            log.info(f'[iter: 0/{updates}][loss: {loss.item()}]')
+#     if preprocess is not None:
+#         log.info('preprocess specified')
+#     if regularization is not None:
+#         log.info('regularization specified')
 
-    n_verbose = updates // 10
+#     if verbose:
+#         with torch.no_grad():
+#             sample_processed = sample if preprocess is None else preprocess(sample)
+#             sample_regularized = sample if regularization is None else regularization(sample_processed)
+#             y_hat = objective(sample_regularized)
+#             loss = y_hat.mean()
+#             log.info(f'[iter: 0/{updates}][loss: {loss.item()}]')
 
-    if threshold is not None:
-        threshold_crossed_i = np.zeros(len(sample), dtype=np.bool)
-        sample_optimized = torch.empty_like(sample)
+#     n_verbose = updates // 10
 
-    for i in range(1, updates+1):
-        sample_processed = sample if preprocess is None else preprocess(sample)
-        sample_regularized = sample if regularization is None else regularization(sample_processed)
-        y_hat = objective(sample_regularized)
-        loss = y_hat.mean()
+#     if threshold is not None:
+#         threshold_crossed_i = np.zeros(len(sample), dtype=np.bool)
+#         sample_optimized = torch.empty_like(sample)
 
-        # Note this is threshold after preprocessing & regularization(!!)
-        if threshold is not None:
-            with torch.no_grad():
-                # Store sample when threshold passed
-                threshold_crossed_i_ = (y_hat.detach().cpu().numpy() < threshold)
-                store_i = ~threshold_crossed_i&threshold_crossed_i_
-                sample_optimized[store_i] = sample[store_i].detach()
-                threshold_crossed_i[store_i] = True
+#     for i in range(1, updates+1):
+#         sample_processed = sample if preprocess is None else preprocess(sample)
+#         sample_regularized = sample if regularization is None else regularization(sample_processed)
+#         y_hat = objective(sample_regularized)
+#         loss = y_hat.mean()
 
-                if store_i.any():
-                    log.info('threshold!')
-                    log.info(store_i, sample_optimized[store_i].detach(), sample_regularized[store_i].detach(), y_hat)
-                # # if threshold_crossed_i_.any():
-                # #     log.info('threshold!')
-                # #     break
+#         # Note this is threshold after preprocessing & regularization(!!)
+#         if threshold is not None:
+#             with torch.no_grad():
+#                 # Store sample when threshold passed
+#                 threshold_crossed_i_ = (y_hat.detach().cpu().numpy() < threshold)
+#                 store_i = ~threshold_crossed_i&threshold_crossed_i_
+#                 sample_optimized[store_i] = sample[store_i].detach()
+#                 threshold_crossed_i[store_i] = True
 
-                if threshold_crossed_i_.all():
-                    log.info(f'Threshold crossed. [-loss: ({-loss.item()}) > threshold: ({threshold})]')
-                    break
+#                 if store_i.any():
+#                     log.info('threshold!')
+#                     log.info(store_i, sample_optimized[store_i].detach(), sample_regularized[store_i].detach(), y_hat)
+#                 # # if threshold_crossed_i_.any():
+#                 # #     log.info('threshold!')
+#                 # #     break
 
-        optimizer_.zero_grad()
-        loss.backward()
-        optimizer_.step()
-        if i%n_verbose==0:
-            log.info(f'[iter: {i}/{updates}][loss: {loss.item()}]')
+#                 if threshold_crossed_i_.all():
+#                     log.info(f'Threshold crossed. [-loss: ({-loss.item()}) > threshold: ({threshold})]')
+#                     break
 
-    # Should return preprocessed sample?
-    if threshold is not None:
-        sample_optimized[~threshold_crossed_i] = sample[~threshold_crossed_i].detach()
-        return sample_optimized.to(device_original)
-    else:
-        return sample.detach().to(device_original)
+#         optimizer_.zero_grad()
+#         loss.backward()
+#         optimizer_.step()
+#         if i%n_verbose==0:
+#             log.info(f'[iter: {i}/{updates}][loss: {loss.item()}]')
 
-def optimize(objective, sample, updates, Optimizer, optimizer_kwargs, preprocess=None, regularization=None, threshold=None, return_best=False, verbose=False, batch_size=None):
-    """
-    Optimize sample
-    Copies the sample and returns the optimized tensor.
+#     # Should return preprocessed sample?
+#     if threshold is not None:
+#         sample_optimized[~threshold_crossed_i] = sample[~threshold_crossed_i].detach()
+#         return sample_optimized.to(device_original)
+#     else:
+#         return sample.detach().to(device_original)
 
-    Parameters
-    ----------
-    arg :
-        dd
-    Returns
-    -------
-    sample : torch.Tensor which is optimized
+# def optimize(objective, sample, updates, Optimizer, optimizer_kwargs, preprocess=None, regularization=None, threshold=None, return_best=False, verbose=False, batch_size=None):
+#     """
+#     Optimize sample
+#     Copies the sample and returns the optimized tensor.
 
-    References
-    ----------
-    .. [1] `Feature Visualization
-           <https://distill.pub/2017/feature-visualization/>`_
-    Examples
-    --------
-    >>>
-    """
-    if batch_size is None:
-        sample_optimized = _optimize(objective=objective, sample=sample, updates=updates, preprocess=preprocess, regularization=regularization, Optimizer=Optimizer, optimizer_kwargs=optimizer_kwargs, threshold=threshold, return_best=return_best, verbose=verbose)
-    else:
-        if verbose: log.info('Run in batches')
-        loader = D.DataLoader(sample, batch_size=batch_size, drop_last=False)
-        l_sample_optimized = []
-        for sample_batch in loader:
-            sample_optimized = _optimize(objective=objective, sample=sample, updates=updates, preprocess=preprocess, regularization=regularization, Optimizer=Optimizer, optimizer_kwargs=optimizer_kwargs, threshold=threshold, return_best=return_best, verbose=verbose)
-            l_sample_optimized.append(sample_optimized)
-        sample_optimized = torch.stack(l_sample_optimized, axis=0)
-    return sample_optimized
+#     Parameters
+#     ----------
+#     arg :
+#         dd
+#     Returns
+#     -------
+#     sample : torch.Tensor which is optimized
+
+#     References
+#     ----------
+#     .. [1] `Feature Visualization
+#            <https://distill.pub/2017/feature-visualization/>`_
+#     Examples
+#     --------
+#     >>>
+#     """
+#     if batch_size is None:
+#         sample_optimized = _optimize(objective=objective, sample=sample, updates=updates, preprocess=preprocess, regularization=regularization, Optimizer=Optimizer, optimizer_kwargs=optimizer_kwargs, threshold=threshold, return_best=return_best, verbose=verbose)
+#     else:
+#         if verbose: log.info('Run in batches')
+#         loader = D.DataLoader(sample, batch_size=batch_size, drop_last=False)
+#         l_sample_optimized = []
+#         for sample_batch in loader:
+#             sample_optimized = _optimize(objective=objective, sample=sample, updates=updates, preprocess=preprocess, regularization=regularization, Optimizer=Optimizer, optimizer_kwargs=optimizer_kwargs, threshold=threshold, return_best=return_best, verbose=verbose)
+#             l_sample_optimized.append(sample_optimized)
+#         sample_optimized = torch.stack(l_sample_optimized, axis=0)
+#     return sample_optimized

@@ -1,0 +1,8 @@
+# @package _global_
+cv:
+  _target_: tools.sklearn.model_selection.stratified_nested_kfold_split_i
+  n_splits: 5
+  m_splits: 3
+  split_i: 0
+  split_j: 0
+  random_state: ${random.seed}

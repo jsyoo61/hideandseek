@@ -8,10 +8,12 @@ hydra:
     # gpus_per_task: 0
     # tasks_per_node: 1
     # nodes: 1
+    qos: gpu_access
+    gres: gpu:1
     mem_gb: 64
-    partition: general
+    partition: volta-gpu
     additional_parameters:
-      mail-user: jsyoo61@unc.edu
+      mail-user: youremail@unc.edu
     #   mail-type: END
     # array_parallelism: 2000
-    timeout_min: 600 # 4 hours by default
+    timeout_min: 1200 # 4 hours by default

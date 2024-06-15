@@ -1,0 +1,8 @@
+
+dir:
+  project: ${hydra:runtime.cwd}
+  data_raw: ${dir.project}/data/raw
+
+
+  data_processed: ${dir.project}/data/processed # Where the signal segments are
+  data_cohort: ${dir.data_processed}/cohort_signal.csv # Where the signal segment summary is
