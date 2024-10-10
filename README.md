@@ -46,6 +46,7 @@ Currently prettifying codes. (30.10.2022.)
     trainer.train(5) # Train for specified number of epochs
     trainer.train(epoch=5) # Same thing with trainer.train(5)
     trainer.train(step=500) # Train for specified number of updates
+pwd
 
     trainer.network.cpu()
 
@@ -53,6 +54,7 @@ and simply run multiple batch of experiments with a single line command such as:
 
     python train.py -m lr=1e-3,1e-2 batch_size=32,64 "random_seed=range(0,5)" \
     hydra/launcher=joblib hydra.launcher.n_jobs=8
+
     # Runs total of 2*2*5=40 batch of experiments, with 8 processes at a time. Experiment results are stored in hydra.sweep.dir which can be overridden.
 
 To do

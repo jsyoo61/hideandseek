@@ -1,0 +1,21 @@
+defaults:
+  - _self_
+
+dataset:
+  name: cifar100  # Change to cifar10 if needed
+  path: './data'
+
+train:
+  lr: 0.001            # Learning rate
+  batch_size: 64       # Batch size
+  epoch: 20            # Number of epochs
+  criterion: MSELoss   # Loss function
+  optimizer: Adam      # Optimizer type
+  validation_split: 0.1  # Percentage of data to use for validation
+
+random:
+  seed: 42
+  strict: True
+
+amp: False             # Mixed precision training
+gpu_id: 0              # GPU to use, if available
