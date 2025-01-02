@@ -124,12 +124,6 @@ def model_type(model):
     else:
         return 'unknown'
 
-def extract_dataset(dataset):
-    if hasattr(dataset, 'get_x_all'):
-        x = dataset.get_x_all()
-
-    return {'x': x, 'y': y}
-
 def add_batch_dim(data):
     """
     adds batch dimension (axis=0)

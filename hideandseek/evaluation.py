@@ -58,28 +58,46 @@ def reproducible_worker_dict():
     g.manual_seed(0)
     return {'worker_init_fn': seed_worker, 'generator': g}
 
-def _test_assertion(dataset, targets_type, test_f, result_dict, keep_x):
+def _test_assertion(dataset, targets_type, forward_f, result_dict, keep_x):
     # Safety check
-    if test_f is not None and result_dict is not None:
-        assert callable(test_f) and issubclass(type(result_dict), dict), f'test_f must be callable and result_dict must be dict-like'
-    elif test_f is None and result_dict is None:
-        # Infer targets_type and create corresponding test_f and result_dict
+    if forward_f is not None and result_dict is not None:
+        assert callable(forward_f) and issubclass(type(result_dict), dict), f'forward_f must be callable and result_dict must be dict-like'
+    elif forward_f is None and result_dict is None:
+        # Infer targets_type and create corresponding forward_f and result_dict
         if targets_type is None:
             if hasattr(dataset, 'targets_type'):
                 targets_type = dataset.targets_type
             else:
-                raise Exception('When test_f and result_dict is not given, targets_type must be given or the dataset must have the attribute "targets_type"')
+                raise Exception('When forward_f and result_dict is not given, targets_type must be given or the dataset must have the attribute "targets_type"')
         assert targets_type in targets_type_list, f'targets_type must be one of {targets_type_list}, received: {targets_type}'
-        test_f, result_dict = get_test_f(targets_type, keep_x=keep_x)
+        forward_f, result_dict = get_forward_f(targets_type, keep_x=keep_x)
     else:
-        raise Exception(f'test_f and result_dict must either both be provided or None, received [test_f: {test_f}][result_dict: {result_dict}]')
-    return test_f, result_dict
+        raise Exception(f'forward_f and result_dict must either both be provided or None, received [forward_f: {forward_f}][result_dict: {result_dict}]')
+    return forward_f, result_dict
 
-def test_network(network, dataset, batch_size=64, targets_type=None, test_f=None, result_dict=None, keep_x=False, num_workers=0, amp=False):
-    '''
-    inference stage of network.
-    '''
-    test_f, result_dict = _test_assertion(dataset=dataset, targets_type=targets_type, test_f=test_f, result_dict=result_dict, keep_x=keep_x)
+def forward_network(network, dataset, forward_f=None, batch_size=64, targets_type=None, result_dict=None, keep_x=False, num_workers=0, amp=False):
+    """
+    Forward pass of the network on the dataset.
+    Takes care of device, dataloader, and mixed precision.
+    
+    Parameters
+    ----------
+    network: torch.nn.Module
+        Network to be tested.
+    dataset : torch.utils.data.Dataset
+        Dataset to be tested.
+    forward_f : callable, default=None
+        Function to be tested.
+        If None, it will be inferred from dataset.targets_type
+        (Arguments: data, network, device)
+        (Returns: dictionary of tensors or tuple of tensors)
+
+    Returns
+    -------
+    result : ndarrays corresponding to the outputs from the forward_f 
+        returns tuple or dict, based on forward_f return
+    """
+    forward_f, result_dict = _test_assertion(dataset=dataset, targets_type=targets_type, forward_f=forward_f, result_dict=result_dict, keep_x=keep_x)
 
     device = T.torch.get_device(network) # Test on the network's device
     network.eval()
@@ -88,32 +106,48 @@ def test_network(network, dataset, batch_size=64, targets_type=None, test_f=None
     kwargs_dataloader = reproducible_worker_dict()
     test_loader = D.DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=num_workers, **kwargs_dataloader)
 
+    l_results = []
     with torch.no_grad():
         # Mixed precision for acceleration
         if amp:
             with torch.autocast(device_type=device.type):
                 for data in test_loader:
-                    result_dict = test_f(data=data, network=network, result_dict=result_dict, device=device, keep_x=keep_x)
+                    result = forward_f(data=data, network=network, device=device, keep_x=keep_x)
+                    l_results.append(result)
         else:
             for data in test_loader:
-                result_dict = test_f(data=data, network=network, result_dict=result_dict, device=device, keep_x=keep_x)
+                result = forward_f(data=data, network=network, device=device, keep_x=keep_x)
+                l_results.append(result)
 
-    result_dict = {k: torch.cat(v, dim=0) if len(v)>0 else v for k, v in result_dict.items()}
-    if amp: result_dict = {k: v.to(torch.float16) for k, v in result_dict.items()} # Transform bfloat16 (amp) to regular float16
-    result_dict = {k: v.numpy() for k, v in result_dict.items()}
+    # Formatting: Concatenate, (optional amp), numpy
+    return_type = type(result)
+    if return_type is dict:
+        result = T.merge_dict(l_results)
+        result = {k: torch.cat(v, dim=0) if len(v)>0 else v for k, v in result.items()}
+        if amp: result = {k: v.to(torch.float16) for k, v in result}
+        result = {k: v.numpy() for k, v in result.items()}
+    elif return_type is tuple:
+        result = T.merge_tuple(l_results)
+        result = tuple(torch.cat(v, dim=0) if len(v)>0 else v for v in result)
+        if amp: result = tuple(v.to(torch.float16) for v in result)
+        result = tuple(v.numpy() for v in result)
+    elif return_type is torch.Tensor: # Single tensor return
+        result = torch.cat(l_results, dim=0)
+        if amp: result = result.to(torch.float16)
+        result = result.numpy()
+    else:
+        raise Exception(f'Unknown return type: {return_type}')
 
-    # network.train() # Is this necessary?
+    return result
 
-    return result_dict
-
-def test_model(model, dataset, batch_size=64, targets_type=None, test_f=None, result_dict=None, keep_x=False, num_workers=0, amp=False):
+def forward_model(model, dataset, batch_size=64, targets_type=None, forward_f=None, result_dict=None, keep_x=False, num_workers=0, amp=False):
     '''
     wrapper around model.
-    transfers get_f (preprocessing modules) of node to dataset, and returns them to original dataset after inference.
+    transfers get_f (preprocessing modules) of model to dataset, and returns them to original dataset after inference.
     '''
     network = model.network
     dataset, misc_temp = transfer_misc(model, dataset)
-    result_dict = test_network(network, dataset, batch_size, targets_type, test_f, result_dict, keep_x, num_workers, amp)
+    result_dict = forward_network(network, dataset, batch_size, targets_type, forward_f, result_dict, keep_x, num_workers, amp)
     dataset = inverse_transfer_misc(misc_temp, dataset)
 
     return result_dict
@@ -123,26 +157,26 @@ def evaluate(results, metrics):
         scores = {}
         for metric_name, metric in metrics.items():
             scores[metric_name] = metric(results)
-    elif type(metrics) is list:
+    elif type(metrics) is list or type(metrics) is tuple:
         scores = [metric(results) for metric in metrics]
     else:
         scores = metrics(results)
     return scores
 
 targets_type_list = [None, 'categorical', 'multihead_classification', 'autoencode', 'regression'] # move this to utils?
-def get_test_f(targets_type, keep_x=False):
+def get_forward_f(targets_type, keep_x=False):
     assert targets_type in targets_type_list, f'targets_type must be one of {targets_type_list}, received: {targets_type}'
     if targets_type is None or targets_type == 'regression':
-        test_f = _test_base
+        forward_f = _forward_base
         result_list = ['y_true', 'y_hat']
     elif targets_type == 'categorical':
-        test_f = _test_categorical
+        forward_f = _forward_categorical
         result_list = ['y_true', 'y_hat', 'y_score', 'y_pred']
     elif targets_type == 'multihead_classification':
-        test_f = _test_multihead_categorical
+        forward_f = _forward_multihead_categorical
         result_list = ['y_true', 'y_hat', 'y_score', 'y_pred']
     elif targets_type == 'autoencode':
-        test_f = _test_autoencode
+        forward_f = _forward_autoencode
         result_list = ['x', 'z', 'x_hat']
     else:
         raise Exception(f'unknown targets_type: {targets_type}')
@@ -150,56 +184,62 @@ def get_test_f(targets_type, keep_x=False):
     if keep_x and 'x' not in result_list: result_list.append('x')
     result_dict = {r:[] for r in result_list}
 
-    return test_f, result_dict
+    return forward_f, result_dict
 
-def _test_base(data, network, result_dict, device=None, keep_x=False):
+def _forward_base(data, network, result_dict, device=None, keep_x=False):
     # device = device if device is not None else T.torch.get_device(network)
     x = data['x'].to(device)
     y = data['y'].to(device)
     y_hat = network(x)
 
-    result_dict['y_true'].append(y.cpu())
-    result_dict['y_hat'].append(y_hat.cpu())
-    if keep_x: result_dict['x'].append(x.cpu())
+    result_dict = {
+        'y_true': y.cpu(),
+        'y_hat': y_hat.cpu()
+    }
+    if keep_x: result_dict['x'] = x.cpu()
     return result_dict
 
-def _test_categorical(data, network, result_dict, device=None, keep_x=False):
+def _forward_categorical(data, network, result_dict, device=None, keep_x=False):
     # Is y_hat necessary? for torch_crossentropyloss? any other methods?
     x = data['x'].to(device)
     y = data['y'].to(device)
     y_hat = network(x)
     y_score = torch.softmax(y_hat, dim=1) # (N, n_classes)
 
-    result_dict['y_true'].append(y.cpu())
-    result_dict['y_hat'].append(y_hat.cpu())
-    result_dict['y_score'].append(y_score.cpu())
-    result_dict['y_pred'].append(y_score.argmax(axis=-1).cpu())
-    if keep_x: result_dict['x'].append(x.cpu())
+    result_dict = {
+        'y_true': y.cpu(),
+        'y_hat': y_hat.cpu(),
+        'y_score': y_score.cpu(),
+        'y_pred': y_score.argmax(axis=1).cpu()
+    }
+    if keep_x: result_dict['x'] = x.cpu()
     return result_dict
 
-def _test_multihead_categorical(data, network, result_dict, device=None, keep_x=False):
+def _forward_multihead_categorical(data, network, result_dict, device=None, keep_x=False):
     x = data['x'].to(device)
     y = data['y'].to(device)
     y_hat = network(x)
     y_score = torch.softmax(y_hat, dim=-1) # (N, subtype, n_classes)
 
-    result_dict['y_true'].append(y.cpu())
-    result_dict['y_hat'].append(y_hat.cpu())
-    result_dict['y_score'].append(y_score.cpu())
-    result_dict['y_pred'].append(y_score.argmax(axis=-1).cpu())
-    if keep_x: result_dict['x'].append(x.cpu())
+    result_dict = {
+        'y_true': y.cpu(),
+        'y_hat': y_hat.cpu(),
+        'y_score': y_score.cpu(),
+        'y_pred': y_score.argmax(axis=-1).cpu()
+    }
+    if keep_x: result_dict['x'] = x.cpu()
     return result_dict
 
-def _test_autoencode(data, network, result_dict, device=None):
+def _forward_autoencode(data, network, result_dict, device=None):
     x = data['x'].to(device)
     z = network.encoder(x)
     x_hat = torch.sigmoid(network.decoder(z))
 
-    x, z, x_hat = x.cpu(), z.cpu(), x_hat.cpu()
-
-    result_dict['x'].append(x)
-    result_dict['z'].append(z)
-    result_dict['x_hat'].append(x_hat)
+    result_dict = {
+        'x': x.cpu(),
+        'z': z.cpu(),
+        'x_hat': x_hat.cpu()
+    }
     return result_dict
 
 # %%

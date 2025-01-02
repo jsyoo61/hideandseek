@@ -5,6 +5,9 @@ import tools
 from . import utils as U
 
 class BaseModel(object):
+    '''
+    Wrapper around neural network model for inference using numpy arrays.
+    '''
     call_arguments = []
 
     def __init__(self, network, amp=False, misc={}):

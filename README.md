@@ -3,6 +3,10 @@ Highly modularized deep learning training library.
 
 Why use `hideandseek`?
 
+- Only code the experiment specific parts of ANN experiment (dataset, nn.Module definition, criterion, forward pass)
+- Define every ANN experiment parameters in keyword argument, for easy experimental control
+- Takes care of every other logistics (logging, device type matching, amp, random batching control)
+
 - Easy training & saving deep learning models along with other modules (ex: preprocessing modules) required in inference
 - Run multiple deep learning experiments in parallel on multiples GPUs (powered by [hydra](https://hydra.cc/docs/intro/), and python multiprocessing)
 - Design and analyze experiments scientifically by modifying variables (powered by [hydra](https://hydra.cc/docs/intro/))
@@ -24,4 +28,6 @@ Multirun with batch of experiments (Hyperparameter sweep):
 
 To do
 - [ ] Draw figures to explain hideandseek
+- [ ] `.py` based tutorial
+- [ ] `.ipynb' based tutorial
 - [ ] GUI for generating experiment scripts when conducting variable sweeps

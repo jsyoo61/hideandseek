@@ -32,7 +32,6 @@ log = logging.getLogger(__name__)
 class Trainer:
     def __init__(self, network, train_dataset=None, cfg_train={}, criterion=None, network_dir=None, cfg_val=None, val_dataset=None, val_metrics=None, name='default', verbose=True, amp=False, reproduce=True):
         '''
-        Things Trainer do:
         - train network with early stopping, given hyperparameters
         - save/load network with necessary preprocessing pipeline
 
@@ -166,10 +165,41 @@ class Trainer:
         else:
             log.warning('No train_dataset found. Skipping generate_loader()')
 
-    def train(self, epoch=None, new_op=True, no_val=False, step=None, reset_loss_tracker=False):
-        '''
+    def train(self, epoch=None, new_op=True, no_val=False, step=None, reset_loss_tracker=False, device=None):
+        """
         Trains the network with the specified duration.
-        '''
+
+        Parameters
+        ----------
+        epoch : int, default=None
+            Number of epochs to train the network.
+            If None, the value is taken from self.cfg_train['epoch']
+            Must be mutually exclusive with "step" argument.
+
+        new_op : bool, default=True
+            Whether to create a new optimizer.
+            If False, the optimizer is not initialized, keeping the previous state.
+
+        no_val : bool, default=False
+            Whether to skip validation during training.
+            If True, the validation is skipped even when val_dataset is given.
+        
+        step : int, default=None
+            Number of steps to train the network.
+            Must be mutually exclusive with "epoch" argument.
+        
+        reset_loss_tracker : bool, default=False
+            Whether to reset the loss_tracker before training.
+
+        device : torch.device, default=None
+            Explicity Device to train the network, recommended to default to None. 
+            If None, the device is taken from the network.
+
+        Returns
+        -------
+        loss_tracker : tools.modules.ValueTracker
+
+        """
         assert epoch is None or step is None, f'only one of epoch or step can be specified. received epoch: {epoch}, step: {step}'
         if step is None:
             horizon = 'epoch'
@@ -185,13 +215,13 @@ class Trainer:
             log.debug(f'[Node: {self.name}] train for {step} steps')
 
         self.network.train()
-        device = tools.torch.get_device(self.network)
-        self.criterion = self.criterion.to(device)
+        self._device = device if device is not None else tools.torch.get_device(self.network)
+        self.criterion = self.criterion.to(self._device)
         if reset_loss_tracker: self.loss_tracker.reset()
         self.generate_loader()
         '''
-        There may be one or more loaders, but self.loader is the standard of synchronization
-        Either return multiple values from dataset, or modify self.forward to use other loaders
+        There may be one or more loaders, but self.loader is the standard of synchronization with batches.
+        Either return multiple values from dataset, or modify self.forward to use other loaders.
         '''
 
         if self.val_dataset is not None:
@@ -210,16 +240,15 @@ class Trainer:
             self.op = optim.Adam(self.network.parameters(), **kwargs)
 
         if horizon == 'epoch':
-            self._update_epoch(T=epoch, no_val=no_val, device=device)
+            self._update_epoch(T=epoch, no_val=no_val, device=self._device)
         elif horizon=='step':
-            self._update_step(T=step, no_val=no_val, device=device)
+            self._update_step(T=step, no_val=no_val, device=self._device)
 
         # TODO: Return criterion back to its original device, meaning we have to store its previous device info
         self.criterion = self.criterion.cpu()
         return self.loss_tracker
 
-    def _update_epoch(self, T, no_val=False, device=None):
-        self._device = device if device is not None else tools.torch.get_device(self.network)
+    def _update_epoch(self, T, no_val=False):
 
         _iter = 0
         for epoch in range(1, T+1):
@@ -228,7 +257,8 @@ class Trainer:
             for batch_i, data in enumerate(self.loader, 1):
                 self.iter += 1
                 _iter += 1
-                loss = self._update(data)
+                loss = self.update(data)
+
                 self.print(f'[Node: {self.name}][iter_sum: {self.iter}][Epoch: {epoch}/{T}][Batch: {batch_i}/{len(self.loader)}][Loss: {loss:.7f} (Avg: {self.train_meter.avg:.7f})]')
                 self.loss_tracker.step(self.iter, loss)
 
@@ -239,9 +269,8 @@ class Trainer:
                         self.print('Patience met, stopping training')
                         return None # return None since double break is impossible in python
 
-    def _update_step(self, T, no_val=False, device=None):
-        self._device = device if device is not None else tools.torch.get_device(self.network)
-        if hasattr(self, '_loader_inst'): del self._loader_inst # Load data from the 1st batch
+    def _update_step(self, T, no_val=False):
+        if hasattr(self, '_loader_inst'): del self._loader_inst # Load data from the 1st batch, start fresh
 
         for _iter in range(1, T+1):
             # Get Data
@@ -259,9 +288,9 @@ class Trainer:
                 self.n_batch = 1
 
             self.iter += 1
-            loss = self._update(data)
-            self.print(f'[iter_sum: {self.iter}][Iter: {_iter}/{T}][Batch: {self.n_batch}/{len(self.loader)}][Loss: {loss:.6f} (Avg: {self.train_meter.avg:.6f})]')
+            loss = self.update(data)
 
+            self.print(f'[iter_sum: {self.iter}][Iter: {_iter}/{T}][Batch: {self.n_batch}/{len(self.loader)}][Loss: {loss:.6f} (Avg: {self.train_meter.avg:.6f})]')
             self.loss_tracker.step(self.iter, loss)
 
             # Validation
@@ -271,17 +300,6 @@ class Trainer:
                 if patience_end: # If patience has reached, stop training
                     self.print('Patience met, stopping training')
                     return None # return None since double break is impossible in python
-
-    def _update(self, data):
-        '''
-        Pseudo function to support amp (automatic mixed precision)
-        '''
-        if self.amp:
-            # Mixed precision for acceleration
-            with torch.autocast(device_type=self._device.type):
-                return self.update(data)
-        else:
-            return self.update(data)
 
     def update(self, data):
         """
@@ -301,8 +319,12 @@ class Trainer:
         loss : float
         """
         try:
-            outputs, N = self._forward(data)
-            loss = self._criterion(outputs)
+            # Automatic Mixed Precision (AMP, float32 -> float16) for acceleration
+            if self.amp:
+                with torch.autocast(device_type=self._device.type):
+                    loss, N = self._forward(data)
+            else:
+                loss, N = self._forward(data)
 
             self.op.zero_grad()
             loss.backward()
@@ -316,26 +338,28 @@ class Trainer:
             log.warning(e)
             import pdb; pdb.set_trace()
 
-    def _forward(self, data):
+    def _forward(self, data): # TODO: change to function decorator?
         '''
-        Pseudo function to support passing tuple or dict from a batch from dataloader to forward()
+        Pseudo function to:
+        1. Move data to self._device
+        2. Support passing tuple or dict from a batch from dataloader to forward()
         '''
         datatype = type(data)
         # When data is given as a tuple/list
         if datatype is tuple or datatype is list:
             data = [x.to(self._device) for x in data]
             N = len(data[0]) # number of data in batch
-            outputs = self.forward(*data)
+            loss = self.forward(*data)
 
         # When data is given as a dict
         elif datatype is dict:
             data = {key: value.to(self._device) for key, value in data.items()}
             N = len(next(iter(data.values()))) # number of data in batch
-            outputs = self.forward(**data)
+            loss = self.forward(**data)
 
         else:
             raise Exception(f'return type from dataset must be one of [tuple, list, dict], received: {datatype}')
-        return outputs, N
+        return loss, N
 
     def forward(self, x, y):
         """
@@ -348,19 +372,8 @@ class Trainer:
         """
         
         y_hat = self.network(x)
+        loss = self.criterion(y_hat, y)
 
-        return y_hat, y
-
-    def _criterion(self, outputs):
-        outputstype = type(outputs)
-        if outputstype is tuple or outputstype is list:
-            loss = self.criterion(*outputs)
-        elif outputstype==dict:
-            loss = self.criterion(**outputs)
-        elif outputstype==torch.Tensor:
-            loss = self.criterion(outputs)
-        else:
-            raise Exception(f'return type from forward must be one of [tuple, list, dict, torch.Tensor], received: {type(outputs)}')
         return loss
 
     def epoch_f(self):
