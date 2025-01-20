@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 # %%
 class Trainer:
-    def __init__(self, network, train_dataset=None, cfg_train={}, criterion=None, network_dir=None, cfg_val=None, val_dataset=None, val_metrics=None, name='default', verbose=True, amp=False, reproduce=True):
+    def __init__(self, network, train_dataset=None, cfg_train={}, criterion=None, network_dir=None, cfg_val=None, val_dataset=None, val_metrics=None, forward_f=None, name='default', verbose=True, amp=False, reproduce=True):
         '''
         - train network with early stopping, given hyperparameters
         - save/load network with necessary preprocessing pipeline
@@ -74,6 +74,7 @@ class Trainer:
         self.cfg_val = dcopy(dict(cfg_val)) if cfg_val is not None else {}
         self.val_dataset = val_dataset
         self.val_metrics = val_metrics
+        self.forward_f = forward_f
         self.earlystopper = EarlyStopper(increase_better=cfg_val['increase_better'], patience=cfg_val['patience']) if self.val_dataset is not None else None
         if 'target_dataset' in self.cfg_val:
             if type(self.val_dataset)==dict:
@@ -123,7 +124,7 @@ class Trainer:
             if type(self.val_dataset)==dict:
                 scores = {}
                 for name, dataset in self.val_dataset.items():
-                    d_results = E.test_model(self.model, dataset, batch_size=self.cfg_val['batch_size'], amp=self.amp)
+                    d_results = E.forward_model(self.model, dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.forward_f, amp=self.amp)
                     if any([np.isnan(v).any() for v in d_results.values()]):
                         log.warning(f'[Node: {self.name}][validate] NaN found in d_results. Skipping validation...')
                         score = {self.cfg_val['criterion']: self.earlystopper.best_score}
@@ -133,7 +134,7 @@ class Trainer:
                     self.print(f'[dataset_name: {name}] Validation Score: {score}')
                 score = scores[self.cfg_val['target_dataset']]
             else:
-                d_results = E.test_model(self.model, self.val_dataset, batch_size=self.cfg_val['batch_size'], amp=self.amp)
+                d_results = E.forward_model(self.model, self.val_dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.forward_f, amp=self.amp)
                 if any([np.isnan(v).any() for v in d_results.values()]):
                     log.warning(f'[Node: {self.name}][validate] NaN found in d_results. Skipping validation...')
                     score = {self.cfg_val['criterion']: self.earlystopper.best_score}
@@ -357,6 +358,11 @@ class Trainer:
             N = len(next(iter(data.values()))) # number of data in batch
             loss = self.forward(**data)
 
+        elif datatype is torch.Tensor:
+            data = data.to(self._device)
+            N = len(data)
+            loss = self.forward(data)
+            
         else:
             raise Exception(f'return type from dataset must be one of [tuple, list, dict], received: {datatype}')
         return loss, N
