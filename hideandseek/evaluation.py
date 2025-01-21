@@ -76,7 +76,7 @@ def _test_assertion(dataset, targets_type, forward_f, result_dict, keep_x):
     return forward_f, result_dict
 
 # def forward_network(network, dataset, forward_f=None, batch_size=64, targets_type=None, result_dict=None, keep_x=False, num_workers=0, amp=False):
-def forward_network(network, dataset, forward_f=None, batch_size=64, targets_type=None, keep_x=False, num_workers=0, amp=False):
+def forward_network(network, dataset, forward_f=None, batch_size=64, targets_type=None, num_workers=0, amp=False):
     """
     Forward pass of the network on the dataset.
     Takes care of device, dataloader, and mixed precision.
@@ -107,7 +107,7 @@ def forward_network(network, dataset, forward_f=None, batch_size=64, targets_typ
                 targets_type = dataset.targets_type
             else:
                 raise Exception('When forward_f and result_dict is not given, targets_type must be given or the dataset must have the attribute "targets_type"') 
-        forward_f = get_forward_f(targets_type, keep_x=keep_x)
+        forward_f = get_forward_f(targets_type)
 
     device = T.torch.get_device(network) # Test on the network's device
     network.eval()
@@ -124,61 +124,75 @@ def forward_network(network, dataset, forward_f=None, batch_size=64, targets_typ
                 for data in test_loader:
                     data = T.torch.to(data, device)
                     result = forward_f(network=network, data=data)
-                    result = T.torch.to(data, device='cpu')
+                    result = T.torch.to(result, device='cpu')
                     l_results.append(result)
         else:
             for data in test_loader:
                 data = T.torch.to(data, device)
                 result = forward_f(network=network, data=data)
-                result = T.torch.to(data, device='cpu')
+                result = T.torch.to(result, device='cpu')
                 l_results.append(result)
 
     # Formatting: Concatenate, (optional amp), numpy
-    return_type = type(result)
-    if return_type is dict:
+    if isinstance(result, dict): 
         result = T.merge_dict(l_results)
         result = {k: torch.cat(v, dim=0) if len(v)>0 else v for k, v in result.items()}
         if amp: result = {k: v.to(torch.float16) for k, v in result}
         result = {k: v.numpy() for k, v in result.items()}
-    elif return_type is tuple:
+    elif isinstance(result, (list, tuple)):
         result = T.merge_tuple(l_results)
         result = tuple(torch.cat(v, dim=0) if len(v)>0 else v for v in result)
         if amp: result = tuple(v.to(torch.float16) for v in result)
         result = tuple(v.numpy() for v in result)
-    elif return_type is torch.Tensor: # Single tensor return
+    elif isinstance(result, torch.Tensor): # Single tensor return
         result = torch.cat(l_results, dim=0)
         if amp: result = result.to(torch.float16)
         result = result.numpy()
     else:
-        raise Exception(f'Unknown return type: {return_type}')
+        raise Exception(f'Unknown data type from forward_f return: {type(result)}')
 
     return result
 
-def forward_model(model, dataset, forward_f=None, batch_size=64, targets_type=None, result_dict=None, keep_x=False, num_workers=0, amp=False):
+def forward_model(model, dataset, forward_f=None, batch_size=64, targets_type=None, num_workers=0, amp=False):
     '''
     wrapper around model.
     transfers get_f (preprocessing modules) of model to dataset, and returns them to original dataset after inference.
     '''
     network = model.network
     dataset, misc_temp = transfer_misc(model, dataset)
-    result = forward_network(network, dataset, batch_size, targets_type, forward_f, keep_x, num_workers, amp)
+    result = forward_network(network=network, dataset=dataset, forward_f=forward_f, batch_size=batch_size, targets_type=targets_type, num_workers=num_workers, amp=amp)
     dataset = inverse_transfer_misc(misc_temp, dataset)
 
     return result
 
-def evaluate(results, metrics):
-    if type(metrics) is dict:
+def evaluate(result, metrics):
+    if isinstance(metrics, dict):
         scores = {}
         for metric_name, metric in metrics.items():
-            scores[metric_name] = metric(results)
-    elif type(metrics) is list or type(metrics) is tuple:
-        scores = [metric(results) for metric in metrics]
+            if isinstance(result, dict):
+                scores[metric_name] = metric(**result)
+            elif isinstance(result, (list, tuple)):
+                scores[metric_name] = metric(*result)
+            else:
+                scores[metric_name] = metric(result)
+    elif isinstance(metrics, (list, tuple)):
+        if isinstance(result, dict):
+            scores = [metric(**result) for metric in metrics]
+        elif isinstance(result, (list, tuple)):
+            scores = [metric(*result) for metric in metrics]
+        else:
+            scores = [metric(result) for metric in metrics]
     else:
-        scores = metrics(results)
+        if isinstance(result, dict):
+            scores = metrics(**result)
+        elif isinstance(result, (list, tuple)):
+            scores = metrics(*result)
+        else:
+            scores = metrics(result)
     return scores
 
 targets_type_list = [None, 'categorical', 'multihead_classification', 'autoencode', 'regression'] # move this to utils?
-def get_forward_f(targets_type, keep_x=False):
+def get_forward_f(targets_type):
     assert targets_type in targets_type_list, f'targets_type must be one of {targets_type_list}, received: {targets_type}'
     if targets_type is None or targets_type == 'regression':
         forward_f = _forward_base
@@ -195,7 +209,7 @@ def get_forward_f(targets_type, keep_x=False):
     else:
         raise Exception(f'unknown targets_type: {targets_type}')
     
-    if keep_x and 'x' not in result_list: result_list.append('x')
+    # if keep_x and 'x' not in result_list: result_list.append('x')
     log.info(f'get_forward_f: targets_type: {targets_type}, result_list: {result_list}')
     # result_dict = {r:[] for r in result_list}
 

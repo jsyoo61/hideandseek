@@ -124,22 +124,24 @@ class Trainer:
             if type(self.val_dataset)==dict:
                 scores = {}
                 for name, dataset in self.val_dataset.items():
-                    d_results = E.forward_model(self.model, dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.forward_f, amp=self.amp)
-                    if any([np.isnan(v).any() for v in d_results.values()]):
-                        log.warning(f'[Node: {self.name}][validate] NaN found in d_results. Skipping validation...')
+                    results = E.forward_model(self.model, dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.forward_f, amp=self.amp)
+                    isnan = any([np.isnan(v).any() for v in results.values()]) if isinstance(results, dict) else np.isnan(np.concatenate(results)).any()
+                    if isnan:
+                        log.warning(f'[Node: {self.name}][validate] NaN found in results. Skipping validation...')
                         score = {self.cfg_val['criterion']: self.earlystopper.best_score}
                     else:
-                        score = E.evaluate(d_results, self.val_metrics)
+                        score = E.evaluate(results, self.val_metrics)
                     scores[name] = score
                     self.print(f'[dataset_name: {name}] Validation Score: {score}')
                 score = scores[self.cfg_val['target_dataset']]
             else:
-                d_results = E.forward_model(self.model, self.val_dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.forward_f, amp=self.amp)
-                if any([np.isnan(v).any() for v in d_results.values()]):
-                    log.warning(f'[Node: {self.name}][validate] NaN found in d_results. Skipping validation...')
+                results = E.forward_model(self.model, self.val_dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.forward_f, amp=self.amp)
+                isnan = any([np.isnan(v).any() for v in results.values()]) if isinstance(results, dict) else np.isnan(np.concatenate(results)).any()
+                if isnan:
+                    log.warning(f'[Node: {self.name}][validate] NaN found in results. Skipping validation...')
                     score = {self.cfg_val['criterion']: self.earlystopper.best_score}
                 else:
-                    score = E.evaluate(d_results, self.val_metrics)
+                    score = E.evaluate(results, self.val_metrics)
                 self.print(f'Validation Score: {score}')
             
             if self.earlystopper is not None:
@@ -241,9 +243,9 @@ class Trainer:
             self.op = optim.Adam(self.network.parameters(), **kwargs)
 
         if horizon == 'epoch':
-            self._update_epoch(T=epoch, no_val=no_val, device=self._device)
+            self._update_epoch(T=epoch, no_val=no_val)
         elif horizon=='step':
-            self._update_step(T=step, no_val=no_val, device=self._device)
+            self._update_step(T=step, no_val=no_val)
 
         # TODO: Return criterion back to its original device, meaning we have to store its previous device info
         self.criterion = self.criterion.cpu()
@@ -319,25 +321,20 @@ class Trainer:
         -------
         loss : float
         """
-        try:
-            # Automatic Mixed Precision (AMP, float32 -> float16) for acceleration
-            if self.amp:
-                with torch.autocast(device_type=self._device.type):
-                    loss, N = self._forward(data)
-            else:
+        # Automatic Mixed Precision (AMP, float32 -> float16) for acceleration
+        if self.amp:
+            with torch.autocast(device_type=self._device.type):
                 loss, N = self._forward(data)
+        else:
+            loss, N = self._forward(data)
 
-            self.op.zero_grad()
-            loss.backward()
-            self.op.step()
+        self.op.zero_grad()
+        loss.backward()
+        self.op.step()
 
-            loss = loss.item()
-            self.train_meter.step(loss, N)
-            return loss
-
-        except Exception as e:
-            log.warning(e)
-            import pdb; pdb.set_trace()
+        loss = loss.item()
+        self.train_meter.step(loss, N)
+        return loss
 
     def _forward(self, data): # TODO: change to function decorator?
         '''
