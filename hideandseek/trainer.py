@@ -156,6 +156,7 @@ class Trainer:
                     self.earlystopper.history.reset()
                     
         torch.cuda.empty_cache()
+        self.network.train()
         return patience_end
 
     def generate_loader(self):
@@ -217,7 +218,6 @@ class Trainer:
             step = step
             log.debug(f'[Node: {self.name}] train for {step} steps')
 
-        self.network.train()
         self._device = device if device is not None else tools.torch.get_device(self.network)
         self.criterion = self.criterion.to(self._device)
         if reset_loss_tracker: self.loss_tracker.reset()
@@ -232,6 +232,7 @@ class Trainer:
                 self.print('Node.validation given, but "cv_step" not specified in cfg_train. Defaults to 1 epoch')
                 self.cfg_train['cv_step'] = len(self.loader)
             self.validate() # initial testing
+        self.network.train()
 
         # Make new optimizer
         if new_op or not hasattr(self, 'op'):
