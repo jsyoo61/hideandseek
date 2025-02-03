@@ -1,4 +1,4 @@
-__version__ = "0.3.11" # 0.3.0 Now, Trainer.forward() should return the loss not outputs.
+__version__ = "0.3.14" # 0.3.0 Now, Trainer.forward() should return the loss not outputs.
 from . import evaluation as E
 from .trainer import Trainer
 # from . import validation as V

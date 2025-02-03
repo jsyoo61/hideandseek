@@ -1,6 +1,7 @@
 from copy import deepcopy as dcopy
 import logging
 import multiprocessing
+import warnings
 
 import numpy as np
 import sklearn.metrics as metrics
@@ -165,26 +166,34 @@ def forward_model(model, dataset, forward_f=None, batch_size=64, targets_type=No
 
     return result
 
+
+# def multicall(result, functions):
 def evaluate(result, metrics):
     if isinstance(metrics, dict):
         scores = {}
         for metric_name, metric in metrics.items():
             if isinstance(result, dict):
-                scores[metric_name] = metric(**result)
+                # Only pass the arguments that are in the metric function
+                kwargs = {k:v for k, v in result.items() if k in metric.__code__.co_varnames}
+                scores[metric_name] = metric(**kwargs)
             elif isinstance(result, (list, tuple)):
                 scores[metric_name] = metric(*result)
             else:
                 scores[metric_name] = metric(result)
     elif isinstance(metrics, (list, tuple)):
         if isinstance(result, dict):
-            scores = [metric(**result) for metric in metrics]
+            kwargs = {k:v for k, v in result.items() if k in metric.__code__.co_varnames}
+            scores = [metric(**kwargs) for metric in metrics]
         elif isinstance(result, (list, tuple)):
             scores = [metric(*result) for metric in metrics]
         else:
             scores = [metric(result) for metric in metrics]
     else:
         if isinstance(result, dict):
-            scores = metrics(**result)
+            kwargs = {k:v for k, v in result.items() if k in metric.__code__.co_varnames}
+            if len(kwargs) < len(result):
+                warnings.warn('Some arguments in result are not used in the metric function, when only single metric was passed')
+            scores = metrics(**kwargs)
         elif isinstance(result, (list, tuple)):
             scores = metrics(*result)
         else:
@@ -196,35 +205,32 @@ def get_forward_f(targets_type):
     assert targets_type in targets_type_list, f'targets_type must be one of {targets_type_list}, received: {targets_type}'
     if targets_type is None or targets_type == 'regression':
         forward_f = _forward_base
-        result_list = ['y_true', 'y_hat']
+        result_keys = ['y_true', 'y_pred']
     elif targets_type == 'categorical':
         forward_f = _forward_categorical
-        result_list = ['y_true', 'y_hat', 'y_score', 'y_pred']
+        result_keys = ['y_true', 'y_hat', 'y_score', 'y_pred'] # y_hat vs y_logit?
     elif targets_type == 'multihead_classification':
         forward_f = _forward_multihead_categorical
-        result_list = ['y_true', 'y_hat', 'y_score', 'y_pred']
+        result_keys = ['y_true', 'y_hat', 'y_score', 'y_pred']
     elif targets_type == 'autoencode':
         forward_f = _forward_autoencode
-        result_list = ['x', 'z', 'x_hat']
+        result_keys = ['x', 'z', 'x_hat']
     else:
         raise Exception(f'unknown targets_type: {targets_type}')
     
-    # if keep_x and 'x' not in result_list: result_list.append('x')
-    log.info(f'get_forward_f: targets_type: {targets_type}, result_list: {result_list}')
-    # result_dict = {r:[] for r in result_list}
+    log.info(f'get_forward_f: targets_type: {targets_type}, keys in result (dict): {result_keys}')
 
-    # return forward_f, result_dict
     return forward_f
 
 def _forward_base(network, data):
     # device = device if device is not None else T.torch.get_device(network)
     x = data['x']
     y = data['y']
-    y_hat = network(x)
+    y_pred = network(x)
 
     result_dict = {
         'y_true': y,
-        'y_hat': y_hat
+        'y_pred': y_pred
     }
     # if keep_x: result_dict['x'] = x
     return result_dict

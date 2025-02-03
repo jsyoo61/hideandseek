@@ -164,8 +164,6 @@ class Trainer:
             reproduce_kwargs = U.reproducible_worker_dict() if self.reproduce else {}
             drop_last = len(self.train_dataset) % self.cfg_train['batch_size'] == 1 # To avoid batch normalization layers from raising exceptions
             self.loader = D.DataLoader(self.train_dataset, batch_size=self.cfg_train['batch_size'], shuffle=True, drop_last=drop_last, **reproduce_kwargs)
-            # self.loader = D.DataLoader(self.train_dataset, batch_size=self.cfg_train['batch_size'], shuffle=True, drop_last=True, **U.reproducible_worker_dict()) if len(self.train_dataset) % self.cfg_train['batch_size'] == 1 \
-            #         else D.DataLoader(self.train_dataset, batch_size=self.cfg_train['batch_size'], shuffle=True, drop_last=False, **U.reproducible_worker_dict())
         else:
             log.warning('No train_dataset found. Skipping generate_loader()')
 
@@ -229,10 +227,9 @@ class Trainer:
 
         if self.val_dataset is not None:
             if 'cv_step' not in self.cfg_train:
-                self.print('Node.validation given, but "cv_step" not specified in cfg_train. Defaults to 1 epoch')
+                self.print('val_dataset is given but "cv_step" not specified in cfg_train. Defaults to 1 epoch')
                 self.cfg_train['cv_step'] = len(self.loader)
             self.validate() # initial testing
-        self.network.train()
 
         # Make new optimizer
         if new_op or not hasattr(self, 'op'):
