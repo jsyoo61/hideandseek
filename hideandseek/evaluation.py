@@ -1,4 +1,6 @@
 from copy import deepcopy as dcopy
+from functools import partial
+import inspect
 import logging
 import multiprocessing
 import warnings
@@ -89,10 +91,11 @@ def forward_network(network, dataset, forward_f=None, batch_size=64, targets_typ
     dataset : torch.utils.data.Dataset
         Dataset to be tested.
     forward_f : callable, default=None
-        Function to be tested.
-        If None, it will be inferred from dataset.targets_type
-        (Arguments: data, network, device)
-        (Returns: dictionary of tensors or tuple of tensors)
+        forward pass function to pass the data through the network.
+        If None, either inferred from dataset.targets_type or the data is just fed to the network and returned as output of the network (probably tensor/tuple not dict)
+
+        (Arguments: network, data[, device])
+        (Returns: dictionary or tuple of tensors)
 
     Returns
     -------
@@ -101,14 +104,14 @@ def forward_network(network, dataset, forward_f=None, batch_size=64, targets_typ
     """
 
     # forward_f check
-    # forward_f, result_dict = _test_assertion(dataset=dataset, targets_type=targets_type, forward_f=forward_f, result_dict=result_dict, keep_x=keep_x)
     if forward_f is None:
-        if targets_type is None:
-            if hasattr(dataset, 'targets_type'):
-                targets_type = dataset.targets_type
-            else:
-                raise Exception('When forward_f and result_dict is not given, targets_type must be given or the dataset must have the attribute "targets_type"') 
-        forward_f = get_forward_f(targets_type)
+        if targets_type is None and hasattr(dataset, 'targets_type'):
+            targets_type = dataset.targets_type
+            forward_f = get_forward_f(targets_type)
+            
+        else:
+            forward_f = _forward
+    forward_f = partial(forward_f, network=network)
 
     device = T.torch.get_device(network) # Test on the network's device
     network.eval()
@@ -124,13 +127,13 @@ def forward_network(network, dataset, forward_f=None, batch_size=64, targets_typ
             with torch.autocast(device_type=device.type):
                 for data in test_loader:
                     data = T.torch.to(data, device)
-                    result = forward_f(network=network, data=data)
+                    result = function_call_type_matching(f=forward_f, args=data)
                     result = T.torch.to(result, device='cpu')
                     l_results.append(result)
         else:
             for data in test_loader:
                 data = T.torch.to(data, device)
-                result = forward_f(network=network, data=data)
+                result = function_call_type_matching(f=forward_f, args=data)
                 result = T.torch.to(result, device='cpu')
                 l_results.append(result)
 
@@ -166,38 +169,52 @@ def forward_model(model, dataset, forward_f=None, batch_size=64, targets_type=No
 
     return result
 
-
 # def multicall(result, functions):
 def evaluate(result, metrics):
     if isinstance(metrics, dict):
-        scores = {}
-        for metric_name, metric in metrics.items():
+        try:
+            scores = {}
+            for metric_name, metric in metrics.items():
+                scores[metric_name] = function_call_type_matching(f=metric, args=result)
+                # if isinstance(result, dict):
+                #     # Only pass the arguments that are in the metric function
+                #     kwargs = {k:v for k, v in result.items() if k in inspect.signature(metric).parameters.keys()}
+                #     scores[metric_name] = metric(**kwargs)
+                # elif isinstance(result, (list, tuple)):
+                #     scores[metric_name] = metric(*result)
+                # else:
+                #     scores[metric_name] = metric(result)
+        except Exception as e:
             if isinstance(result, dict):
-                # Only pass the arguments that are in the metric function
-                kwargs = {k:v for k, v in result.items() if k in metric.__code__.co_varnames}
-                scores[metric_name] = metric(**kwargs)
+                message = f'Error at metric: {metric}, result.keys(): {result.keys()}\n'
             elif isinstance(result, (list, tuple)):
-                scores[metric_name] = metric(*result)
+                message = f'Error at metric: {metric}, len(result): {len(result)}\n'
             else:
-                scores[metric_name] = metric(result)
+                message = f'Error at metric: {metric}, type(result): {type(result)}\n'
+            e.add_note(message)
+            raise e
     elif isinstance(metrics, (list, tuple)):
-        if isinstance(result, dict):
-            kwargs = {k:v for k, v in result.items() if k in metric.__code__.co_varnames}
-            scores = [metric(**kwargs) for metric in metrics]
-        elif isinstance(result, (list, tuple)):
-            scores = [metric(*result) for metric in metrics]
-        else:
-            scores = [metric(result) for metric in metrics]
-    else:
-        if isinstance(result, dict):
-            kwargs = {k:v for k, v in result.items() if k in metric.__code__.co_varnames}
-            if len(kwargs) < len(result):
-                warnings.warn('Some arguments in result are not used in the metric function, when only single metric was passed')
-            scores = metrics(**kwargs)
-        elif isinstance(result, (list, tuple)):
-            scores = metrics(*result)
-        else:
-            scores = metrics(result)
+        scores = []
+        for metric in metrics:
+            scores.append(function_call_type_matching(f=metric, args=result))
+            # if isinstance(result, dict):
+            #     kwargs = {k:v for k, v in result.items() if k in inspect.signature(metric).parameters.keys()}
+            #     scores.append(metric(**kwargs))
+            # elif isinstance(result, (list, tuple)):
+            #     scores.append(metric(*result))
+            # else:
+            #     scores.append(metric(result))
+    else: # Single metric
+        scores = function_call_type_matching(f=metrics, args=result)
+        # if isinstance(result, dict):
+        #     kwargs = {k:v for k, v in result.items() if k in inspect.signature(metrics).parameters.keys()}
+        #     if len(kwargs) < len(result):
+        #         warnings.warn('Some arguments in result are not used in the metric function, when only single metric was passed')
+        #     scores = metrics(**kwargs)
+        # elif isinstance(result, (list, tuple)):
+        #     scores = metrics(*result)
+        # else:
+        #     scores = metrics(result)
     return scores
 
 targets_type_list = [None, 'categorical', 'multihead_classification', 'autoencode', 'regression'] # move this to utils?
@@ -221,6 +238,42 @@ def get_forward_f(targets_type):
     log.info(f'get_forward_f: targets_type: {targets_type}, keys in result (dict): {result_keys}')
 
     return forward_f
+
+def function_call_type_matching(f, args):
+    try:
+        if isinstance(args, dict):
+            function_arguments = inspect.signature(f).parameters.keys()
+            if 'kwargs' not in function_arguments: # Will raise error if undefined arguments are passed
+                # Only pass the arguments that are in the function
+                kwargs = {k:v for k, v in args.items() if k in function_arguments}
+            else: # kwargs will allow undefined arguments of f
+                kwargs = args
+            return f(**kwargs)
+        elif isinstance(args, (list, tuple)):
+            return f(*args)
+        else:
+            return f(args)
+    except Exception as e:
+        function_arguments = inspect.signature(f).parameters.keys()
+        if isinstance(args, dict):
+            args = args.keys()
+        elif isinstance(args, (list, tuple)):
+            args = f'tuple of len({len(args)})'
+        else:
+            args = args
+
+        print(f'f: {f}, f_args: {function_arguments}, args: {args}')
+        # e.add_note()
+        raise e
+
+def _forward(network, data):
+    return network(data)
+    # if isinstance(data, dict):
+    #     return network(**data)
+    # elif isinstance(data, (list, tuple)):
+    #     return network(*data)
+    # else:
+    #     return network(data)
 
 def _forward_base(network, data):
     # device = device if device is not None else T.torch.get_device(network)

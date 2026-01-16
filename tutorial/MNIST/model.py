@@ -32,7 +32,7 @@ def Resnet(version=18, pretrained=False, progress=True, info=None):
         model = torchvision.models.resnet152(pretrained=pretrained, progress=progress)
     # model = torch.hub.load('pytorch/vision:v0.9.0', f'resnet{version}', pretrained=pretrained)
     # model = torchvision.models.resnet101(pretrained=pretrained, progress=progress)
-    if in_channels is not 3:
+    if in_channels != 3:
         model.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=model.conv1.out_channels, kernel_size=model.conv1.kernel_size,
                 stride=model.conv1.stride, padding=model.conv1.padding, bias=model.conv1.bias is not None)
     model.fc = nn.Linear(model.fc.in_features, n_classes)

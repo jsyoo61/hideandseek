@@ -1,9 +1,9 @@
 # %%
 import logging
 
+
 import hydra
 from omegaconf import OmegaConf, DictConfig
-
 import torch
 
 # %%

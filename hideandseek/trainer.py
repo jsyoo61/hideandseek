@@ -29,41 +29,77 @@ from . import model as M
 log = logging.getLogger(__name__)
 
 # %%
+def validate_cfg_val(cfg_val):
+    cfg_val = dcopy(dict(cfg_val)) if cfg_val is not None else {}
+    if 'forward_f' not in cfg_val:
+        cfg_val['forward_f'] = None
+    return cfg_val
+
 class Trainer:
-    def __init__(self, network, train_dataset=None, cfg_train={}, criterion=None, network_dir=None, cfg_val=None, val_dataset=None, val_metrics=None, forward_f=None, name='default', verbose=True, amp=False, reproduce=True):
-        '''
+    def __init__(self, network, train_dataset=None, cfg_train={}, criterion=None, network_dir='network', cfg_val=None, val_dataset=None, val_metrics=None, name='default', verbose=True, amp=False, reproduce=True):
+        """
         - train network with early stopping, given hyperparameters
-        - save/load network with necessary preprocessing pipeline
+        - save/load network with necessary preprocessing pipelin
 
-        :param network: torch.nn.Module object
-        :param train_dataset: torch.utils.data.Dataset object
+        Parameters
+        ----------
+        network : torch.nn.Module object
+            Network to train
+
+        train_dataset: torch.utils.data.Dataset object
             This dataset is used for training.
-            Recommended return format from dataset is: {'x': x, 'y': y}
-            where 'x' is the input, and 'y' is the target values.
+            Recommended return format from dataset is dictionary form, although tuples or raw tensors are supported.
+            Example: {'x': x, 'y': y}
+            
+            train_dataset is fed into torch.utils.data.DataLoader object, where it is batched then passed to self.forward(), with the following pattern depending on train_dataset return type:
+                torch.Tensor: self.forward(data)
+                tuple or list: self.forward(*data)
+                dict: self.forward(**data)
 
-        :param validation: dict of Validation objects
+        val_dataset: torch.utils.data.Dataset object or dict of such objects
+            Dataset used for validation (Early stopping)
+            forward mechanism from val_dataset may be different from train_dataset, which could be defined in cfg_val['forward_f']        
 
-        :param cfg_train: dict-like object which contains:
-            lr
-            batch_size
-            weight_decay (optional)
-            cv_step (optional)
+        cfg_train: dict-like object with following keys:
+            lr: float
+            batch_size: int
+            weight_decay: bool (optional)
+            cv_step: int (optional, recommended when val_dataset is given)
         
-        :param cfg_val (optional): dict-like object which contains:
-            increase_better
-            patience
-            batch_size
-            target_dataset (optional, if val_dataset is dict for multiple datasets)
-            criterion (optional, if val_metrics is dict for multiple metrics) 
+        cfg_val: (required if val_dataset is given) dict-like object with following keys:
+            increase_better: Bool
+            patience: int
+            batch_size: int
 
-        :param criterion: torch.nn.Module object, used to compute loss function
+            forward_f: callable, forward pass that might be different from training forward pass (optional)
+            target_dataset: str (optional, if val_dataset is dict for multiple datasets)
+            criterion: str (optional, if val_metrics is dict for multiple metrics) 
+        
+        criterion: nn.Module object
+            Defines the loss function.
+            If parameters exist within criterion, it is moved to the corresponding device where network lies.
+        
+        network_dir: str or Pathlike object, default='network'
+            The directory to save the nn.
+            If early stopping is used, a subdirectory will be created that keeps the models during training.
 
-        Recommended way of making hs.node.Node object is like the following:
+        Examples
+        --------
+        # Recommended way of making hs.Trainer object is like the following:
 
-            kwargs = {'network': Network(), 'train_dataset': train_dataset, 'validation': None, 'cfg_train': cfg.train,
-                    'criterion': criterion, 'network_dir': path['network'], 'verbose': True, 'amp': True}
-            node = hs.Trainer(**kwargs)
-        '''
+        kwargs = {'network': Network(), 'train_dataset': train_dataset, 'validation': None, 'cfg_train': cfg.train,
+                'criterion': criterion, 'network_dir': path['network'], 'verbose': True, 'amp': True}
+        trainer = hs.Trainer(**kwargs)
+
+        # To make a custom Trainer for different neural network applications, just define the forward function:
+
+        class MyTrainer(hs.Trainer):
+            def forward(self, x, y, z):
+                w = self.network(x,y)
+                loss = self.criterion(w, z)
+                return loss
+        """
+
         # Store configurations
         self.network = network
         self.train_dataset = train_dataset
@@ -71,11 +107,10 @@ class Trainer:
         self.criterion = criterion
         self.network_dir = network_dir
 
-        self.cfg_val = dcopy(dict(cfg_val)) if cfg_val is not None else {}
+        self.cfg_val = validate_cfg_val(cfg_val)
         self.val_dataset = val_dataset
         self.val_metrics = val_metrics
-        self.forward_f = forward_f
-        self.earlystopper = EarlyStopper(increase_better=cfg_val['increase_better'], patience=cfg_val['patience']) if self.val_dataset is not None else None
+        self.earlystopper = EarlyStopper(increase_better=cfg_val['increase_better'], patience=cfg_val['patience'], save_dir=os.path.join(self.network_dir, 'network_temp')) if self.val_dataset is not None else None
         if 'target_dataset' in self.cfg_val:
             if type(self.val_dataset)==dict:
                 assert self.cfg_val['target_dataset'] in self.val_dataset, f'[Validation setup] target_dataset: {self.cfg_val["target_dataset"]} not found in val_dataset: {self.val_dataset.keys()}'
@@ -124,7 +159,7 @@ class Trainer:
             if type(self.val_dataset)==dict:
                 scores = {}
                 for name, dataset in self.val_dataset.items():
-                    results = E.forward_model(self.model, dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.forward_f, amp=self.amp)
+                    results = E.forward_model(self.model, dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.cfg_val['forward_f'], amp=self.amp)
                     isnan = any([np.isnan(v).any() for v in results.values()]) if isinstance(results, dict) else np.isnan(np.concatenate(results)).any()
                     if isnan:
                         log.warning(f'[Node: {self.name}][validate] NaN found in results. Skipping validation...')
@@ -135,7 +170,7 @@ class Trainer:
                     self.print(f'[dataset_name: {name}] Validation Score: {score}')
                 score = scores[self.cfg_val['target_dataset']]
             else:
-                results = E.forward_model(self.model, self.val_dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.forward_f, amp=self.amp)
+                results = E.forward_model(self.model, self.val_dataset, batch_size=self.cfg_val['batch_size'], forward_f=self.cfg_val['forward_f'], amp=self.amp)
                 isnan = any([np.isnan(v).any() for v in results.values()]) if isinstance(results, dict) else np.isnan(np.concatenate(results)).any()
                 if isnan:
                     log.warning(f'[Node: {self.name}][validate] NaN found in results. Skipping validation...')
@@ -359,7 +394,7 @@ class Trainer:
             loss = self.forward(data)
             
         else:
-            raise Exception(f'return type from dataset must be one of [tuple, list, dict], received: {datatype}')
+            raise Exception(f'return type from dataset must be one of [torch.Tensor, tuple, list, dict], received: {datatype}')
         return loss, N
 
     def forward(self, x, y):
